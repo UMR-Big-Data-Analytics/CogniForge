@@ -18,21 +18,21 @@ from cogniforge.utils.furthr import FURTHRmind
 load_dotenv()
 st.set_page_config(page_title="CogniForge | Roughness", page_icon="🗻")
 
-st.header("Roughness Placeholder")
-st.write(
-    "This page is a placeholder for the Roughness tool developed by Valerie Durbach."
-)
+st.write("""# Roughness Prediction
+
+This page is for the Roughness tool developed by Valerie Durbach.""")
 
 
-def load_and_preprocess_data(image_bytes, normalize, GrayScale, pretrain, name):
+def load_and_preprocess_data(images_bytes, normalize, GrayScale, pretrain, name):
     image_arrays = []
 
     # loading the images and extracting Rz values as labels
-    with Image.open(image_bytes) as im:
-        if GrayScale:
-            im_array = np.array(im.convert("RGB"))
-            im = tf.image.rgb_to_grayscale(im_array).numpy()
-        image_arrays.append(np.array(im))
+    for img_file in images_result:
+        with Image.open(img_file) as im:
+            if GrayScale:
+                im_array = np.array(im.convert("RGB"))
+                im = tf.image.rgb_to_grayscale(im_array).numpy()
+            image_arrays.append(np.array(im))
 
     X = image_arrays
     X = np.array([np.array(val) for val in X])
@@ -52,6 +52,7 @@ def parse_model_name_and_normalize(filename):
     if filename.endswith(".keras"):
         model_string = filename[: -len(".keras")]
     else:
+        # should never happen: prevented by filter on model selection widget
         raise ValueError("The file does not have a '.keras' extension.")
 
     # Split the string by hyphens to isolate components
@@ -68,26 +69,21 @@ def parse_model_name_and_normalize(filename):
     return model_name, normalize, grayscale, pretrained
 
 
-def predict(model, X, classification=True):
+def predict(model, X, classification):
     # Start inference timing
     start_time = time.time()
 
     # Make predictions
-    predictions = model.predict(X)
-
-    # only for the Classification Task
-    predictions = np.asarray(predictions)
+    predictions = np.asarray(model.predict(X))
 
     if classification:
+        # only for the Classification Task
         predictions = np.argmax(predictions, axis=1)
 
-    return predictions
+    # Calculate the inference time
+    inference_time = time.time() - start_time
 
-
-classification = (
-    st.radio("Task", options=["Rust Classification", "Roughness Prediction"])
-    == "Rust Classification"
-)
+    return predictions, inference_time
 
 
 col1, col2 = st.columns(2)
@@ -98,29 +94,30 @@ with col1:
     if model_result is not None:
         model_bytes, model_name = model_result
 
-        with tempfile.TemporaryDirectory() as tmpdirname:
-            model_path = os.path.join(tmpdirname, model_name)
-            with open(model_path, "wb") as f:
-                f.write(model_bytes.getvalue())
-            model = tf.keras.models.load_model(model_path)
+        with tempfile.NamedTemporaryFile(delete_on_close=False) as f:
+            f.write(model_bytes.getvalue())
+            f.close()
+            model = tf.keras.models.load_model(f.name)
         st.write("load complete")
 
 with col2:
-    st.write("## Choose Image")
-    image_result = FURTHRmind(id="image", file_type="tiff").download_bytes()
-    if image_result is not None:
-        image_bytes, _ = image_result
-        image = Image.open(image_bytes)
-        st.image(image, caption="Chosen Image", use_column_width=True)
+    st.write("## Choose Images")
+    images_result = FURTHRmind(id="image", file_type="tiff").download_experiment()
+    if images_result is not None:
+        images_bytes = [o[0] for o in images_result]
+        st.write("loaded", len(images_bytes), "samples")
 
-if image_result is not None and model_result is not None:
+if images_result is not None and model is not None:
     if st.button("Predict"):
         model_name, normalize, grayscale, pretrained = parse_model_name_and_normalize(
             model_name
         )
-        images = load_and_preprocess_data(
-            image_bytes, normalize, grayscale, pretrained, model_name
+        preprocessed_images = load_and_preprocess_data(
+            images_bytes, normalize, grayscale, pretrained, model_name
         )
 
-        predictions = predict(model, images, classification)
-        st.write(predictions.tolist())
+        predictions, inference_time = predict(model, preprocessed_images, classification=False)
+
+        st.write(f"Inference time: {inference_time:.4f} seconds")
+        st.write("Minimum:", np.min(predictions))
+        st.write("Maximum:", np.max(predictions))
