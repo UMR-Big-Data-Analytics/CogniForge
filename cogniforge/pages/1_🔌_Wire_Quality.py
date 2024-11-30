@@ -2,6 +2,8 @@ import sys
 import streamlit as st
 from pathlib import Path
 
+
+
 # Set up the correct path for imports
 current_dir = Path(__file__).parent.parent.parent
 sys.path.append(str(current_dir))
@@ -9,7 +11,7 @@ sys.path.append(str(current_dir))
 from cogniforge.utils.dataloader import DataLoader
 from cogniforge.utils.furthr import FURTHRmind
 from cogniforge.utils.plotting import plot_sampled
-from cogniforge.utils.data_analysis import analyze_wire_data
+from cogniforge.utils.data_analysis import analyze_spucker
 
 # Configure the Streamlit page once
 st.set_page_config(page_title="CogniForge | Wire Quality", page_icon="🔌")
@@ -62,5 +64,8 @@ with tab2:
 
 # Data Analysis tab
 with tab3:
-    analyze_wire_data()
+    if st.session_state.df is not None:
+        analyze_spucker(st.session_state.df)
+    else:
+        st.warning("Please load and process data first.")
 
