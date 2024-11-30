@@ -1,60 +1,63 @@
 import sys
-
 import streamlit as st
+from pathlib import Path
 
-sys.path.append("../cogniforge")
-from cogniforge.algorithms.anomaly_detection import SpuckerCounter
+# Set up the correct path for imports
+current_dir = Path(__file__).parent.parent.parent
+sys.path.append(str(current_dir))
+
 from cogniforge.utils.dataloader import DataLoader
 from cogniforge.utils.furthr import FURTHRmind
-from cogniforge.utils.plotting import plot_sampled
-from cogniforge.utils.state_button import button
+from cogniforge.utils.plot_data import plot_wire_data
+from cogniforge.utils.data_analysis import analyze_wire_data
 
-st.set_page_config(
-    page_title="CogniForge | Wire Quality",
-    page_icon="🔌",
-)
+# Configure the Streamlit page once
+st.set_page_config(page_title="CogniForge | Wire Quality", page_icon="🔌")
 
-st.write("# Wire Quality")
-st.write(
-    "Welcome to the Wire Quality tool. Here you can analyze and visualize the quality of your wire."
-)
-st.write(
-    "Upload your data to the [FURTHRmind](https://furthr.informatik.uni-marburg.de/) database. Then, here, you can choose the correct dataset and let our algorithms tell you the quality of your wire."
-)
 
-with st.expander("Download Data from FURTHRmind"):
-    data = FURTHRmind().download_csv()
+# Initialize session state for data management
+if 'df' not in st.session_state:
+    st.session_state.df = None
 
-if data is not None:
-    with st.expander("Parse Data"):
-        dl = DataLoader(csv=data)
-        df = dl.get_dataframe()
+# Main page content
+st.title("Wire Quality")
+st.write("Upload your data to the [FURTHRmind](https://furthr.informatik.uni-marburg.de/) database.")
 
-if data is not None and df is not None:
-    with st.expander("Plot Data"):
-        if button("Plot data", "plot_data_wire", True):
-            plot_sampled(df)
+# Create tabs for different functionalities
+tab1, tab2, tab3 = st.tabs(["Load Data", "Plot Data", "Data Analysis"])
 
-    with st.expander("Analysis"):
-        if button("Count Spucker", "spucker", True):
-            st.write("## Spucker Count")
-            column = st.selectbox("Select column", df.columns)
-            column_idx = df.columns.get_loc(column)
-            threshold = st.slider("Threshold", 0.0, df.iloc[:, column_idx].max(), 70.0)
-            index_range = st.slider(
-                "Select range for Spucker count",
-                0.0,
-                df.index[-1],
-                (1.0, df.index[-1] - 1.0),
-            )
-            context_window = st.slider("Context window", 0, int(df.index[-1]), (1, 5))
-            counter = SpuckerCounter(
-                threshold=threshold,
-                ignore_begin_seconds=index_range[0],
-                ignore_end_seconds=df.index[-1] - index_range[1],
-                context_window=context_window,
-            )
-            if button("Start counting", "count_spucker", True):
-                st.write(f"Counting Spucker in {len(df)} lines...")
-                count = counter.count(df.iloc[:, column_idx])
-                st.write(f"Spucker count: {count}")
+# Load Data tab
+with tab1:
+    with st.expander("Step 1: Download Data", expanded=True):
+        with st.spinner('Downloading data...'):
+            data = FURTHRmind().download_csv()
+            if data is not None:
+                st.success("✅ Data downloaded!")
+
+    if data is not None:
+        with st.expander("Step 2: Process Data", expanded=False):
+            with st.spinner('Processing...'):
+                dl = DataLoader(csv=data)
+                df = dl.get_dataframe()
+                if df is not None and not df.empty:
+                    # Store complete dataframe in session state
+                    st.session_state.df = df
+                    st.success("✅ Data processed successfully")
+
+                    # Display preview with first 5 rows
+                    st.write("### Data Preview")
+                    preview_df = df.head(5).copy()
+                    st.dataframe(
+                        preview_df,
+                        use_container_width=True,
+                        hide_index=False
+                    )
+
+# Plot Data tab
+with tab2:
+    plot_wire_data()
+
+# Data Analysis tab
+with tab3:
+    analyze_wire_data()
+
