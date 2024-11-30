@@ -64,7 +64,4 @@ with tab3:
 
 # time trend analysis???
 with tab4:
-    if st.session_state.df is not None:
-        analyze_spucker(st.session_state.df)
-    else:
-        st.warning("Please load and process data first.")
+    st.write("##### Page for time series analysis.")
