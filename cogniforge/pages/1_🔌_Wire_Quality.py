@@ -10,7 +10,7 @@ from cogniforge.utils.furthr import FURTHRmind
 from cogniforge.utils.plotting import plot_sampled
 from cogniforge.utils.data_analysis import analyze_spucker
 
-# Configure the Streamlit page once
+
 st.set_page_config(page_title="CogniForge | Wire Quality", page_icon="🔌")
 
 
@@ -36,13 +36,11 @@ with tab1:
                 dl = DataLoader(csv=data)
                 df = dl.get_dataframe()
                 if df is not None and not df.empty:
-                    # Store complete dataframe in session state
                     st.session_state.df = df
                     st.success("Data processed successfully")
 
-                    # Display preview with first 5 rows
                     st.write("### Data Preview")
-                    preview_df = df.head(5).copy()
+                    preview_df = df.head(10).copy()
                     st.dataframe(
                         preview_df,
                         use_container_width=True,
