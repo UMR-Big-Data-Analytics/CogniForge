@@ -8,7 +8,7 @@ sys.path.append(str(current_dir))
 
 from cogniforge.utils.dataloader import DataLoader
 from cogniforge.utils.furthr import FURTHRmind
-from cogniforge.utils.plot_data import plot_wire_data
+from cogniforge.utils.plotting import plot_sampled
 from cogniforge.utils.data_analysis import analyze_wire_data
 
 # Configure the Streamlit page once
@@ -55,7 +55,10 @@ with tab1:
 
 # Plot Data tab
 with tab2:
-    plot_wire_data()
+    if st.session_state.df is not None:
+        plot_sampled(st.session_state.df)
+    else:
+        st.warning("Please load and process data first.")
 
 # Data Analysis tab
 with tab3:
