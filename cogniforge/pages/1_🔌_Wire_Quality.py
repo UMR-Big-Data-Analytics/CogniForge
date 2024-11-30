@@ -20,7 +20,8 @@ if 'df' not in st.session_state:
 st.title("Wire Quality")
 st.write("Upload your data to the [FURTHRmind](https://furthr.informatik.uni-marburg.de/) database.")
 
-tab1, tab2, tab3 = st.tabs(["Load Data", "Plot Data", "Data Analysis"])
+# tab name for reference
+tab1, tab2, tab3 , tab4= st.tabs(["Load Data", "Plot Data", "Data Analysis", "Time trend(preliminary)"])
 
 # Load Data tab
 with tab1:
@@ -61,3 +62,9 @@ with tab3:
     else:
         st.warning("Please load and process data first.")
 
+# time trend analysis???
+with tab4:
+    if st.session_state.df is not None:
+        analyze_spucker(st.session_state.df)
+    else:
+        st.warning("Please load and process data first.")
