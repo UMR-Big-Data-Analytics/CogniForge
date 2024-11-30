@@ -1,0 +1,13 @@
+QUESTIONS TO INQUIRE AFTER:
+
+
+Data:
+- Which datasets from Furthrmind are for which page relevant?
+- What should be displayed in Data Analysis Tab in Wire Quality?
+
+Furthmind Database
+- Accessibility/ How much authorization are we allowed(in terms of uploading/creating folders)--> relevant for integrating Rust Detection Code
+
+tbc
+
+
