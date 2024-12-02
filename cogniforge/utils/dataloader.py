@@ -13,9 +13,9 @@ class DataLoader:
     df: pd.DataFrame = None
     delimiter: str = ";"
     decimal: str = ","
-    header: int = 2  #data starts at the 3rd row
+    header: int = 1
     skip_blank_lines: bool = True
-    skiprows: list[int] = None
+    skiprows: int = 0
     columns: list = None
     with_preview: bool = True
 
@@ -25,13 +25,14 @@ class DataLoader:
             self.delimiter = st.selectbox("Delimiter", [",", ";"], index=1)
         with col2:
             self.decimal = st.selectbox("Decimal", [",", "."], index=0)
-        with col3: # specify which row to start at
+        with col3:
             self.header = st.number_input("Data starts at row",
                                           value=1, min_value=1, step=1,
-                                          help="Specify at which row the data starts")
+                                          help="Specify which row the data starts at")
         with col4:
-            self.skiprows = st.selectbox("Skip rows", options=list(range(0, 11)), index=1,
-                                        help= "Specify the number of rows to skip")
+            self.skiprows = st.number_input("Skip additional rows",
+                                            min_value=0, value=0, step=1,
+                                            help="Number of rows to skip after the starting row")
 
         self.skip_blank_lines = st.checkbox("Skip blank lines", value=True)
 
@@ -45,33 +46,32 @@ class DataLoader:
 
     def _preview(self):
         """
-        Rewrite _preview method:
+        Preview method:
         - Read csv
         - Specify the first 2 rows as headers
         - Preview the first 10 rows of the df with specified data options
-
         """
         st.write("### Data Preview")
         self.csv.seek(0)
-        total_rows = sum(1 for line in self.csv) - 2  # Subtract 2 for header rows
+        total_rows = sum(1 for line in self.csv) - 2  # Subtract 2 for header /measurement units
         st.write(f"Total number of rows in dataset: {total_rows:,}")
-
-        # Reset file pointer and show preview
         self.csv.seek(0)
         preview_df = self._read_csv(nrows=10)
         preview_df = self.get_row_number(preview_df)
-        st.dataframe(preview_df, use_container_width=True, height = 350)
-
+        st.dataframe(preview_df, use_container_width=True, height=350)
 
     def _read_csv(self, nrows: int = None) -> pd.DataFrame:
         self.csv.seek(0)
+        start_row = self.header + 1 # data starts after header
+        rows_to_skip = list(range(2, start_row + self.skiprows + 1)) # calculate row to skip from starting row
+
         df = pd.read_csv(
             self.csv,
             sep=self.delimiter,
             decimal=self.decimal,
-            header=[0, 1], # specify headers as the first two rows
+            header=[0, 1],
             skip_blank_lines=self.skip_blank_lines,
-            skiprows=list(range(2, self.header)) if self.header > 2 else None,
+            skiprows=rows_to_skip if rows_to_skip else None,
             encoding="latin",
             nrows=nrows,
         )
