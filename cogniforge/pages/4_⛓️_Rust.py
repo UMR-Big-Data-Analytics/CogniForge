@@ -16,11 +16,11 @@ sys.path.append("../cogniforge")
 from cogniforge.utils.furthr import FURTHRmind
 
 load_dotenv()
-st.set_page_config(page_title="CogniForge | Roughness", page_icon="🗻")
+st.set_page_config(page_title="CogniForge | Rust", page_icon="⛓️")
 
-st.write("""# Roughness Prediction
+st.write("""# Rust Prediction
 
-This page is for the Roughness tool developed by Valerie Durbach.""")
+This page is for the Rust tool developed by Valerie Durbach.""")
 
 
 def load_and_preprocess_data(images_bytes, normalize, GrayScale, pretrain, name):
@@ -70,9 +70,6 @@ def parse_model_name_and_normalize(filename):
 
 
 def predict(model, X, classification):
-    # Start inference timing
-    start_time = time.time()
-
     # Make predictions
     predictions = np.asarray(model.predict(X))
 
@@ -80,10 +77,7 @@ def predict(model, X, classification):
         # only for the Classification Task
         predictions = np.argmax(predictions, axis=1)
 
-    # Calculate the inference time
-    inference_time = time.time() - start_time
-
-    return predictions, inference_time
+    return predictions
 
 
 col1, col2 = st.columns(2)
@@ -116,8 +110,16 @@ if images_result is not None and model is not None:
             images_bytes, normalize, grayscale, pretrained, model_name
         )
 
-        predictions, inference_time = predict(model, preprocessed_images, classification=False)
+        predictions = predict(model, preprocessed_images, classification=True)
+        it = np.nditer(predictions, flags=['c_index'])
 
-        st.write(f"Inference time: {inference_time:.4f} seconds")
-        st.write("Minimum:", np.min(predictions))
-        st.write("Maximum:", np.max(predictions))
+        for prediction in it:
+            if prediction:
+                first_rust_index = it.index
+                break
+
+        if first_rust_index is None:
+            st.write("Every patch is rustless.")
+        else:
+            rust_img = Image.open(images_bytes[first_rust_index])
+            st.image(rust_img, caption="Sample found with rust")

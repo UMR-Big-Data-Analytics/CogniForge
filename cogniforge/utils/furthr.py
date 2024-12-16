@@ -208,6 +208,37 @@ class FURTHRmind:
         else:
             st.error("No group found")
 
+    def download_experiment(self) -> list[tuple[BytesIO, str]] | None:
+        """Download experiment folder from the FURTHRmind database."""
+        _fm = self.setup_project()
+
+        group = self.select_group()
+        if not group:
+            st.error("No group found")
+            return
+        
+        experiment = self.select_experiment(group)
+        if experiment is None:
+            st.error("No experiment or sample found")
+            return
+        
+        files = [f for f in experiment.files if f.name.endswith(self.file_type)]
+        if not files:
+            st.error("No files found")
+            return
+        
+        if button("Load", "load" + self.id, stateful=True):
+            res = []
+
+            for file in files:
+                bytes = self.download_bytes_file(file)
+                if bytes is None:
+                    return None
+                
+                res.push((self.download_bytes_file(file), file.name))
+
+            return res
+
     def download_csv(self) -> StringIO | None:
         """Download a CSV file from the FURTHRmind database."""
         _fm = self.setup_project()
