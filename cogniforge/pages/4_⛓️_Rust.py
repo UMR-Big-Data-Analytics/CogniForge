@@ -1,21 +1,13 @@
-import json
-import os
-import sys
 import tempfile
-import time
-import zipfile
-from io import BytesIO
 
 import numpy as np
 import streamlit as st
 import tensorflow as tf
-from dotenv import load_dotenv
 from PIL import Image
 
-sys.path.append("../cogniforge")
-from cogniforge.utils.furthr import FURTHRmind
+from utils.furthr import FURTHRmind
+import config
 
-load_dotenv()
 st.set_page_config(page_title="CogniForge | Rust", page_icon="⛓️")
 
 st.write("""# Rust Prediction
@@ -81,22 +73,35 @@ def predict(model, X, classification):
 
 
 col1, col2 = st.columns(2)
+model = images_result = None # else last if can fail
 
 with col1:
     st.write("## Choose Model")
-    model_result = FURTHRmind(id="model", file_type="keras").download_bytes()
-    if model_result is not None:
-        model_bytes, model_name = model_result
+    model_widget = FURTHRmind(id="model")
+    model_widget.force_group_id = config.furthr['models']['group_id']
+    model_widget.container_category = "Code"
+    model_widget.expected_fielddata = {
+        'Model Purpose': "Rust Prediction"
+    }
+    model_widget.select_container()
 
-        with tempfile.NamedTemporaryFile(delete_on_close=False) as f:
-            f.write(model_bytes.getvalue())
-            f.close()
-            model = tf.keras.models.load_model(f.name)
-        st.write("load complete")
+    if model_widget.selected is not None:
+        model_result = model_widget.download_bytes(model_widget.selected.files[0])
+        if model_result is not None:
+            model_bytes, model_name = model_result
+
+            with tempfile.NamedTemporaryFile(delete_on_close=False, suffix=".keras") as fh:
+                fh.write(model_bytes.getvalue())
+                fh.close()
+                model = tf.keras.models.load_model(fh.name)
+            st.write("load complete")
 
 with col2:
     st.write("## Choose Images")
-    images_result = FURTHRmind(id="image", file_type="tiff").download_experiment()
+    images_widget = FURTHRmind(id="image")
+    images_widget.file_extension = "tiff"
+    images_widget.select_container()
+    images_result = images_widget.download_bytes()
     if images_result is not None:
         images_bytes = [o[0] for o in images_result]
         st.write("loaded", len(images_bytes), "samples")

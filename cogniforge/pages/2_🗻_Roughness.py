@@ -1,21 +1,14 @@
-import json
-import os
-import sys
 import tempfile
 import time
-import zipfile
-from io import BytesIO
 
 import numpy as np
 import streamlit as st
 import tensorflow as tf
-from dotenv import load_dotenv
 from PIL import Image
 
-sys.path.append("../cogniforge")
-from cogniforge.utils.furthr import FURTHRmind
+from utils.furthr import FURTHRmind
+import config
 
-load_dotenv()
 st.set_page_config(page_title="CogniForge | Roughness", page_icon="🗻")
 
 st.write("""# Roughness Prediction
@@ -87,25 +80,44 @@ def predict(model, X, classification):
 
 
 col1, col2 = st.columns(2)
+model = images_result = None # else last if can fail
 
 with col1:
     st.write("## Choose Model")
-    model_result = FURTHRmind(id="model", file_type="keras").download_bytes()
-    if model_result is not None:
-        model_bytes, model_name = model_result
+    model_widget = FURTHRmind(id="model")
+    code_item = model_widget.select_container(
+        model_widget.__fm.Group.get(config.furthr['models']['group_id']),
+        category="Code",
+        expected_fielddata={
+            'Model Purpose': "Roughness Prediction"
+        }
+    )
+    if code_item is not None:
+        model_result = model_widget.download_bytes(code_item.files[0])
+        if model_result is not None:
+            model_bytes, model_name = model_result
 
-        with tempfile.NamedTemporaryFile(delete_on_close=False) as f:
-            f.write(model_bytes.getvalue())
-            f.close()
-            model = tf.keras.models.load_model(f.name)
-        st.write("load complete")
+            with tempfile.NamedTemporaryFile(delete_on_close=False, suffix=".keras") as fh:
+                fh.write(model_bytes.getvalue())
+                fh.close()
+                model = tf.keras.models.load_model(fh.name)
+            st.write("load complete")
 
 with col2:
     st.write("## Choose Images")
-    images_result = FURTHRmind(id="image", file_type="tiff").download_experiment()
-    if images_result is not None:
-        images_bytes = [o[0] for o in images_result]
-        st.write("loaded", len(images_bytes), "samples")
+    st.write("They must have no rust.")
+    images_widget = FURTHRmind(id="image", file_type="tiff")
+    samples = images_widget.select_container(
+        images_widget.__fm.Group.get(config.furthr['models']['group_id']),
+        expected_fielddata={
+            'Data Label': "NoRust"
+        }
+    )
+    if samples is not None:
+        images_result = images_widget.download_container(samples)
+        if images_result is not None:
+            images_bytes = [o[0] for o in images_result]
+            st.write("loaded", len(images_bytes), "samples")
 
 if images_result is not None and model is not None:
     if st.button("Predict"):

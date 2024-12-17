@@ -48,7 +48,10 @@ st.write(
 )
 
 with st.expander("Download Data from FURTHRmind"):
-    data = FURTHRmind("download").download_csv()
+    downloader = FURTHRmind("download")
+    downloader.file_extension = "csv"
+    downloader.select_file()
+    data = downloader.download_string()
 
 if data is not None:
     with st.expander("Parse Data"):
