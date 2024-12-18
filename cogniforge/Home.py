@@ -2,7 +2,7 @@ import streamlit as st
 
 
 home = st.Page(
-    "pages/main.py", title="Home", icon="", default=True
+    "pages/main.py", title="Home", icon="🏠", default=True
 )
 
 timeseries = st.Page(
@@ -33,7 +33,7 @@ wire = st.Page(
 
 pg = st.navigation(
     {
-        "🏠 Home" : [home],
+        "" : [home],
         "⏩ Data Preprocessing" : [timeseries,image],
         "🔌 Wire Quality" : [wire],
         "🗻 Steel Quality" : [roughness,rust],
