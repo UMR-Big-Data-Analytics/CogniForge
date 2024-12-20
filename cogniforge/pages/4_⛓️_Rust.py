@@ -1,5 +1,4 @@
 import tempfile
-import time
 
 import numpy as np
 import streamlit as st
@@ -9,11 +8,11 @@ from PIL import Image
 from utils.furthr import FURTHRmind
 import config
 
-st.set_page_config(page_title="CogniForge | Roughness", page_icon="🗻")
+st.set_page_config(page_title="CogniForge | Rust", page_icon="⛓️")
 
-st.write("""# Roughness Prediction
+st.write("""# Rust Prediction
 
-This page is for the Roughness tool developed by Valerie Durbach.""")
+This page is for the Rust tool developed by Valerie Durbach.""")
 
 
 def load_and_preprocess_data(images_bytes, normalize, GrayScale, pretrain, name):
@@ -63,9 +62,6 @@ def parse_model_name_and_normalize(filename):
 
 
 def predict(model, X, classification):
-    # Start inference timing
-    start_time = time.time()
-
     # Make predictions
     predictions = np.asarray(model.predict(X))
 
@@ -73,10 +69,7 @@ def predict(model, X, classification):
         # only for the Classification Task
         predictions = np.argmax(predictions, axis=1)
 
-    # Calculate the inference time
-    inference_time = time.time() - start_time
-
-    return predictions, inference_time
+    return predictions
 
 
 col1, col2 = st.columns(2)
@@ -87,9 +80,9 @@ with col1:
     model_widget = FURTHRmind(id="model")
     code_item = model_widget.select_item(
         model_widget.fm.Group.get(config.furthr['models']['group_id']),
-        category="Code",
-        expected_fielddata={
-            'Model Purpose': "Roughness Prediction"
+        "Code",
+        {
+            'Model Purpose': "Rust Prediction"
         }
     )
     if code_item is not None:
@@ -105,19 +98,10 @@ with col1:
 
 with col2:
     st.write("## Choose Images")
-    st.write("They must have no rust.")
-    images_widget = FURTHRmind(id="image", file_type="tiff")
-    samples = images_widget.select_item(
-        images_widget.fm.Group.get(config.furthr['models']['group_id']),
-        expected_fielddata={
-            'Data Label': "NoRust"
-        }
-    )
-    if samples is not None:
-        images_result = images_widget.download_item(samples)
-        if images_result is not None:
-            images_bytes = [o[0] for o in images_result]
-            st.write("loaded", len(images_bytes), "samples")
+    images_result = FURTHRmind(id="image", file_type="tiff").download_item(None)
+    if images_result is not None:
+        images_bytes = [o[0] for o in images_result]
+        st.write("loaded", len(images_bytes), "samples")
 
 if images_result is not None and model is not None:
     if st.button("Predict"):
@@ -128,8 +112,16 @@ if images_result is not None and model is not None:
             images_bytes, normalize, grayscale, pretrained, model_name
         )
 
-        predictions, inference_time = predict(model, preprocessed_images, classification=False)
+        predictions = predict(model, preprocessed_images, classification=True)
+        it = np.nditer(predictions, flags=['c_index'])
 
-        st.write(f"Inference time: {inference_time:.4f} seconds")
-        st.write("Minimum:", np.min(predictions))
-        st.write("Maximum:", np.max(predictions))
+        for prediction in it:
+            if prediction:
+                first_rust_index = it.index
+                break
+
+        if first_rust_index is None:
+            st.write("Every patch is rustless.")
+        else:
+            rust_img = Image.open(images_bytes[first_rust_index])
+            st.image(rust_img, caption="Sample found with rust")

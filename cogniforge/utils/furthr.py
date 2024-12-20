@@ -1,21 +1,19 @@
 import os
 import tempfile
-from dataclasses import dataclass, field
 from enum import Enum
 from io import BytesIO, StringIO
+import itertools
 
 import pandas as pd
 import requests
 import streamlit as st
-from dotenv import load_dotenv
 from furthrmind import Furthrmind as API
-from furthrmind.collection import Experiment, File, Group, Project, ResearchItem, Sample
+from furthrmind.collection import Experiment, File, Group, ResearchItem, Sample, FieldData
 from furthrmind.file_loader import FileLoader
+import config
 
 from .object_select_box import selectbox
 from .state_button import button
-
-load_dotenv()
 
 
 @st.cache_data
@@ -98,156 +96,172 @@ class Process(Enum):
     WIRE = "Wire"
 
 
-@dataclass
+def is_fielddata_match(
+        found_fielddata: FieldData,
+        expected_fielddata: dict[str, str],
+) -> bool:
+    for field_name, expected_value in expected_fielddata.items():
+        found_field = next((o for o in found_fielddata if o.field_name == field_name), None)
+        if found_field is None:
+            return False
+        
+        found_value = found_field.value['name'] if found_field.field_type == "ComboBox" else found_field.value
+        if found_value != expected_value:
+            return False
+
+    return True
+
+
 class FURTHRmind:
     """FURTHRmind API interface."""
 
-    id: str = "furtherwidget"
-    api_key: str | None = os.getenv("FURTHRMIND_API_KEY")
-    host: str = "https://furthr.informatik.uni-marburg.de/"
-    session: requests.Session = field(default_factory=requests.Session)
+    id: str
+    session: requests.Session
     process: Process = Process.SPRAYING
-    file_type: str = "csv"
+    file_type: str
+    fm: API
 
-    def __post_init__(self):
+    def __init__(self, id: str = "furtherwidget", file_type: str = "csv"):
+        """Setup the project for the API."""
+        self.id = id
+        self.file_type = file_type
+        self.session = requests.Session()
         self.session.headers.update(
-            {"X-API-KEY": self.api_key, "Content-Type": "application/json"}
+            {"X-API-KEY": config.furthr['api_key'], "Content-Type": "application/json"}
+        )
+        self.fm = API(
+            host=config.furthr['host'],
+            api_key=config.furthr['api_key'],
+            project_id=config.furthr['project_id']
         )
 
     @property
     def url(self) -> str:
         """Return the URL for the FURTHRmind API."""
-        return self.host + "api2/{endpoint}"
+        return config.furthr['host'] + "api2/{endpoint}"
 
     def get(self, endpoint: str) -> dict:
         """Get data from the FURTHRmind database."""
         url = self.url.format(endpoint=endpoint)
         return api_get(url, dict(self.session.headers))
 
-    def download_string_file(self, file: File) -> StringIO | None:
-        """Download a file from the FURTHRmind database."""
-        csv = api_get_string(f"{self.host}files/{file.id}", dict(self.session.headers))
-        if isinstance(csv, StringIO):
-            return csv
-        st.error(f"Failed to download file {file.name}: {csv.reason}")
-
-    def download_bytes_file(self, file: File) -> BytesIO | None:
-        """Download a file from the FURTHRmind database."""
-        b = api_get_bytes(f"{self.host}files/{file.id}", dict(self.session.headers))
-        if isinstance(b, BytesIO):
-            return b
-        st.error(f"Failed to download file {file.name}: {b.reason}")
-
-    def setup_project(self) -> API:
-        """Setup the project for the API."""
-        fm = API(
-            host="https://furthr.informatik.uni-marburg.de/",
-            api_key=os.getenv("FURTHRMIND_API_KEY"),
-        )
-
-        projects = Project.get_all()
-        project = selectbox(
-            projects, label="Choose a project", key=f"{self.id}_project"
-        )
-
-        fm = API(
-            host="https://furthr.informatik.uni-marburg.de/",
-            api_key=os.getenv("FURTHRMIND_API_KEY"),
-            project_id=project.id,
-        )
-        return fm
-
     def select_group(self) -> Group | None:
         """Select a group from the project."""
-        groups = Group.get_all()
+        groups = self.fm.Group.get_all()
         group = selectbox(groups, label="Choose a group", key=f"{self.id}_group")
+        if group is None:
+            st.error("No group found")
         return group
-
-    def select_experiment(
-        self, group: Group
+    
+    def select_item(
+            self,
+            group: Group | None,
+            category: str | None = None, # only for research items
+            expected_fielddata: dict[str, str] | None = None
     ) -> Experiment | Sample | ResearchItem | None:
-        """Select an experiment or sample from the group."""
-        exp_sam = group.experiments + group.samples
-        for l in list(group.researchitems.values()):
-            exp_sam += l
-        chosen_data: Experiment | Sample | None = selectbox(
-            exp_sam,
-            format_name=lambda o: o.name,
-            label="Choose an experiment/sample",
-            key=f"{self.id}_experiment",
-        )
-        if chosen_data is None:
-            return None
-        chosen_data = chosen_data.__class__.get(id=chosen_data.id)
-        return chosen_data
+        """Select a research item, experiment or sample from the group which has a specific attribute and field data"""
+        if group is None:
+            group = self.select_group()
+            if group is None:
+                return None
 
-    def select_file(self, chosen_data: Experiment | Sample) -> File | None:
+        if category:
+            items = group.researchitems.get(category, [])
+            label = f"Choose a {category} item"
+        else:
+            items = group.experiments + group.samples
+            items.extend(itertools.chain.from_iterable(group.researchitems.values()))
+            label = "Choose an experiment/sample/research item"
+
+        if expected_fielddata:
+            # fielddata not populated without get
+            items = [
+                o for o in items
+                if is_fielddata_match(o.get().fielddata, expected_fielddata)
+            ]
+        
+        return selectbox(
+            items, label=label, key=f"{self.id}_item"
+        )
+
+    def select_file(self, chosen_data: Experiment | Sample | ResearchItem | None) -> File | None:
         """Select a file from the experiment or sample."""
+        if chosen_data is None:
+            chosen_data = self.select_item(None)
+            if chosen_data is None:
+                return None
+
         files: list[File] = chosen_data.files
         files = [f for f in files if f.name.endswith(self.file_type)]
         file = selectbox(
             files, label=f"Choose a {self.file_type} file", key=f"{self.id}_file"
         )
+        if file is None:
+            st.error("No file found")
         return file
 
-    def download_bytes(self) -> tuple[BytesIO, str] | None:
+    def download_bytes(self, file: File | None, confirm_load=True) -> tuple[BytesIO, str] | None:
         """Download any file from the FURTHRmind database."""
-        _fm = self.setup_project()
-        group = self.select_group()
-        if group is not None:
-            experiment = self.select_experiment(group)
-            if experiment is not None:
-                file = self.select_file(experiment)
-                if file is not None:
-                    if button("Load", "load" + self.id, stateful=True):
-                        return (self.download_bytes_file(file), file.name)
-                else:
-                    st.error("No file found")
-            else:
-                st.error("No experiment or sample found")
-        else:
-            st.error("No group found")
+        if file is None:
+            file = self.select_file(None)
 
-    def download_csv(self) -> StringIO | None:
+        if file is not None and (not confirm_load or button("Load", "load" + self.id, stateful=True)):
+            b = api_get_bytes(f"{config.furthr['host']}files/{file.id}", dict(self.session.headers))
+            if isinstance(b, BytesIO):
+                return (b, file.name)
+            st.error(f"Failed to download file {file.name}: {b.reason}")
+
+    def download_item(self, chosen_data: Experiment | Sample | ResearchItem | None) -> list[tuple[BytesIO, str]] | None:
+        """Download experiment folder from the FURTHRmind database."""
+        if chosen_data is None:
+            chosen_data = self.select_item(None)
+            if chosen_data is None:
+                return None
+        
+        if not chosen_data._fetched:
+            chosen_data.get()
+
+        files = [f for f in chosen_data.files if f.name.endswith(self.file_type)]
+        if not files:
+            st.error("No files found")
+            return None
+        
+        if button("Load", "load" + self.id, stateful=True):
+            res = []
+            bar_title = "Download in progress. Please wait."
+            my_bar = st.progress(0, text=bar_title)
+
+            for index, file in enumerate(files):
+                res.append(self.download_bytes(file, confirm_load=False))
+                my_bar.progress(index / len(files), text=bar_title)
+
+            my_bar.empty()
+            return res
+
+    def download_csv(self, file: File | None, confirm_load=True) -> StringIO | None:
         """Download a CSV file from the FURTHRmind database."""
-        _fm = self.setup_project()
-        group = self.select_group()
-        if group is not None:
-            experiment = self.select_experiment(group)
-            if experiment is not None:
-                file = self.select_file(experiment)
-                if file is not None:
-                    if button("Load", "load" + self.id, stateful=True):
-                        df = self.download_string_file(file)
-                        return df
-                else:
-                    st.error("No file found")
-            else:
-                st.error("No experiment or sample found")
-        else:
-            st.error("No group found")
+        if file is None:
+            file = self.select_file(None)
+
+        if file is not None and (not confirm_load or button("Load", "load" + self.id, stateful=True)):
+            csv = api_get_string(f"{config.furthr['host']}files/{file.id}", dict(self.session.headers))
+            if isinstance(csv, StringIO):
+                return csv
+            st.error(f"Failed to download file {file.name}: {csv.reason}")
 
     def upload_csv(self, csv: pd.DataFrame, name: str) -> None:
         """Upload a CSV file to the FURTHRmind database."""
-        fm = self.setup_project()
-        group = self.select_group()
-        if group is not None:
-            experiment = self.select_experiment(group)
-            if experiment is not None:
-                if st.button("Upload", "upload_anomaly_score"):
-                    with tempfile.TemporaryDirectory() as tmpdirname:
-                        csv_path = os.path.join(tmpdirname, f"{name}.csv")
-                        csv.to_csv(csv_path)
-                        file_loader = FileLoader(self.host, self.api_key)
-                        file_loader.uploadFile(
-                            csv_path,
-                            parent={
-                                "project": fm.project_id,
-                                "type": "experiment",
-                                "id": experiment.id,
-                            },
-                        )
-            else:
-                st.error("No experiment or sample found")
-        else:
-            st.error("No group found")
+        experiment = self.select_experiment(None)
+        if experiment is not None and st.button("Upload", "upload_anomaly_score"):
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                csv_path = os.path.join(tmpdirname, f"{name}.csv")
+                csv.to_csv(csv_path)
+                file_loader = FileLoader(config.furthr['host'], config.furthr['api_key'])
+                file_loader.uploadFile(
+                    csv_path,
+                    parent={
+                        "project": config.furthr['project_id'],
+                        "type": "experiment",
+                        "id": experiment.id,
+                    },
+                )
