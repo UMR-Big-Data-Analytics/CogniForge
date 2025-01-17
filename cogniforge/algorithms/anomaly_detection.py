@@ -1,9 +1,13 @@
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 from sklearn.cluster import KMeans
+from autotsad.system.main import main as run_autotsad
+from autotsad.system.main import register_autotsad_arguments
+import argparse
 
 
 class AnomalyDetector(ABC):
@@ -29,7 +33,7 @@ class KMeansAnomalyDetector(AnomalyDetector):
         self.n_clusters = n_clusters
         self.window_size = window_size
 
-    def name(self):
+    def name(self): 
         return "KMeans"
 
     def parameters(self):
@@ -56,7 +60,44 @@ class KMeansAnomalyDetector(AnomalyDetector):
             "n_clusters": self.n_clusters,
         }
 
+class AutoTSADAnomalyDetector(AnomalyDetector):
+    def __init__(self):
+        super().__init__()
+        self._name = "AutoTSAD"
+        self._use_gt_for_cleaning = False
 
+    def name(self) -> str:
+        return self._name
+
+    def parameters(self):
+        # Display parameters in Streamlit (if required)
+        self._use_gt_for_cleaning = st.checkbox(
+            "Use",
+            value=self._use_gt_for_cleaning,
+        )
+
+    def detect(self, data: np.ndarray) -> np.ndarray:
+        # Save the dataset to a temporary CSV file
+        dataset_path= Path("ecg-diff-count-1.csv")
+        config_path = Path("autotsad.yaml")
+        if not config_path.exists():
+            raise FileNotFoundError(f"Configuration file not found: {config_path}")
+        if not dataset_path.exists():
+            raise FileNotFoundError(f"Dataset file not found: {dataset_path}")
+        # Call the autotsad function
+        parser = argparse.ArgumentParser()
+        register_autotsad_arguments(parser)
+        args = parser.parse_args(["--config-path", str(config_path), str(dataset_path)])
+
+    # Execute the autotsad run command
+        run_autotsad(args)
+        anomaly_score = 0
+        # Remove the temporary file after processing (optional)
+        dataset_path.unlink(missing_ok=True)
+
+        return anomaly_score
+    
+    
 class SpuckerCounter:
     def __init__(
         self,

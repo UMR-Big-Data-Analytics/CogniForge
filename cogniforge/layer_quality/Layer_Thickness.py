@@ -9,6 +9,7 @@ import streamlit as st
 sys.path.append("../cogniforge")
 from cogniforge.algorithms.anomaly_detection import (
     AnomalyDetector,
+    AutoTSADAnomalyDetector,
     KMeansAnomalyDetector,
 )
 from cogniforge.utils.dataloader import DataLoader
@@ -18,7 +19,6 @@ from cogniforge.utils.plotting import plot_sampled
 from cogniforge.utils.state_button import button
 
 
-@st.cache_data
 def run_anomaly_detection(algorithm: AnomalyDetector, data: np.ndarray) -> np.ndarray:
     anomaly_score = algorithm.detect(df[column_names].values)
     anomaly_score_downsampled = lttb.downsample(
@@ -65,7 +65,7 @@ if data is not None and df is not None:
             "Choose columns", list(df.columns), default=list(df.columns)
         )
         algorithm: AnomalyDetector = selectbox(
-            [KMeansAnomalyDetector()],
+            [KMeansAnomalyDetector(),AutoTSADAnomalyDetector()],
             format_name=lambda a: a.name(),
             label="Choose an anomaly detector",
         )
