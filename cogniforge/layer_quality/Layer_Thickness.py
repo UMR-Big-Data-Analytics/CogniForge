@@ -18,12 +18,24 @@ from cogniforge.utils.object_select_box import selectbox
 from cogniforge.utils.plotting import plot_sampled
 from cogniforge.utils.state_button import button
 
+def save_univariate_time_series(df: pd.DataFrame, selected_column: str, output_path: str):
+    if df.index.name is not None:
+        df.reset_index(inplace=True)
+
+    univariate_df = pd.DataFrame({
+        "timestamp": range(len(df)),  # Generate sequential timestamps
+        f"value-0": df[selected_column]
+    })
+
+    # Save to CSV
+    univariate_df.to_csv(output_path, index=False, header=True)
+    st.write(f"Univariate time series saved to: {output_path}")
 
 def run_anomaly_detection(algorithm: AnomalyDetector, data: np.ndarray) -> np.ndarray:
-    anomaly_score = algorithm.detect(df[column_names].values)
+    anomaly_score = algorithm.detect(data)
     anomaly_score_downsampled = lttb.downsample(
         np.c_[
-            df.index.values.astype(np.float32)[: len(anomaly_score)],
+            np.arange(len(anomaly_score)).astype(np.float32),
             anomaly_score,
         ],
         1000,
@@ -61,22 +73,43 @@ if data is not None and df is not None:
             plot_sampled(df)
 
     with st.expander("Analysis"):
-        column_names = st.multiselect(
-            "Choose columns", list(df.columns), default=list(df.columns)
-        )
+        # Allow column selection dynamically
         algorithm: AnomalyDetector = selectbox(
-            [KMeansAnomalyDetector(),AutoTSADAnomalyDetector()],
+            [KMeansAnomalyDetector(), AutoTSADAnomalyDetector()],
             format_name=lambda a: a.name(),
             label="Choose an anomaly detector",
         )
         if algorithm is not None:
             algorithm.parameters()
-            if button(f"Run {algorithm.name()}", "run_algorithm", True):
-                anomaly_score = run_anomaly_detection(
-                    algorithm, df[column_names].values
+
+            if isinstance(algorithm, AutoTSADAnomalyDetector):
+                # For AutoTSAD: Select a single column for univariate time series
+                column_name = st.selectbox("Select a column for AutoTSAD", df.columns)
+                if column_name:
+                    st.write(f"Selected column: {column_name}")
+                    if button(f"Run {algorithm.name()}", "run_autotsad", True):
+                        temp_csv_path = "temp_univariate_data.csv"
+                        save_univariate_time_series(df, column_name, temp_csv_path)
+
+                        anomaly_score = algorithm.detect(temp_csv_path)
+
+                        st.write("## Upload Score")
+                        FURTHRmind("upload").upload_csv(
+                                pd.DataFrame({"score": anomaly_score}),
+                                f"anomaly_score-{algorithm.name()}-{dt.datetime.now().isoformat()}",
                 )
-                st.write("## Upload Score")
-                FURTHRmind("upload").upload_csv(
-                    pd.DataFrame({"score": anomaly_score}),
-                    f"anomaly_score-{algorithm.name()}-{dt.datetime.now().isoformat()}",
+            else:
+                # For other detectors: Allow multiselect for multiple columns
+                column_names = st.multiselect(
+                    "Choose columns", list(df.columns), default=list(df.columns)
                 )
+                if button(f"Run {algorithm.name()}", "run_algorithm", True):
+                    anomaly_score = run_anomaly_detection(
+                        algorithm, df[column_names].values
+                    )
+                    st.write("## Upload Score")
+                    FURTHRmind("upload").upload_csv(
+                        pd.DataFrame({"score": anomaly_score}),
+                        f"anomaly_score-{algorithm.name()}-{dt.datetime.now().isoformat()}",
+                    )
+

@@ -45,7 +45,7 @@ class KMeansAnomalyDetector(AnomalyDetector):
             data, self.window_size, axis=0
         )
         windows = windows.reshape(-1, self.window_size * data.shape[1])
-        km = KMeans(n_clusters=self.n_clusters)
+        km = KMeans(n_clusters=self.n_clusters,n_init='auto')
         labels = km.fit_predict(windows)
         anomaly_score = np.linalg.norm(windows - km.cluster_centers_[labels], axis=1)
         anomaly_score = (anomaly_score - anomaly_score.min()) / (
@@ -76,24 +76,22 @@ class AutoTSADAnomalyDetector(AnomalyDetector):
             value=self._use_gt_for_cleaning,
         )
 
-    def detect(self, data: np.ndarray) -> np.ndarray:
-        # Save the dataset to a temporary CSV file
-        dataset_path= Path("ecg-diff-count-1.csv")
+    def detect(self, csv_path: str) -> np.ndarray:
         config_path = Path("autotsad.yaml")
         if not config_path.exists():
             raise FileNotFoundError(f"Configuration file not found: {config_path}")
-        if not dataset_path.exists():
-            raise FileNotFoundError(f"Dataset file not found: {dataset_path}")
+        if not Path(csv_path).exists():
+            raise FileNotFoundError(f"Dataset file not found: {csv_path}")
         # Call the autotsad function
         parser = argparse.ArgumentParser()
         register_autotsad_arguments(parser)
-        args = parser.parse_args(["--config-path", str(config_path), str(dataset_path)])
+        args = parser.parse_args(["--config-path", str(config_path), str(csv_path)])
 
-    # Execute the autotsad run command
+        # Execute the autotsad run command
         run_autotsad(args)
         anomaly_score = 0
         # Remove the temporary file after processing (optional)
-        dataset_path.unlink(missing_ok=True)
+        csv_path.unlink(missing_ok=True)
 
         return anomaly_score
     
