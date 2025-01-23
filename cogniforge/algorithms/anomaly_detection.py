@@ -8,7 +8,7 @@ from sklearn.cluster import KMeans
 from autotsad.system.main import main as run_autotsad
 from autotsad.system.main import register_autotsad_arguments
 import argparse
-
+import os,shutil
 
 class AnomalyDetector(ABC):
     @abstractmethod
@@ -70,11 +70,8 @@ class AutoTSADAnomalyDetector(AnomalyDetector):
         return self._name
 
     def parameters(self):
-        # Display parameters in Streamlit (if required)
-        self._use_gt_for_cleaning = st.checkbox(
-            "Use",
-            value=self._use_gt_for_cleaning,
-        )
+        #check with team, what config can be updated from front end
+        pass
 
     def detect(self, csv_path: str) -> np.ndarray:
         config_path = Path("autotsad.yaml")
@@ -88,11 +85,12 @@ class AutoTSADAnomalyDetector(AnomalyDetector):
         args = parser.parse_args(["--config-path", str(config_path), str(csv_path)])
 
         # Execute the autotsad run command
-        run_autotsad(args)
-        anomaly_score = 0
-        # Remove the temporary file after processing (optional)
-        csv_path.unlink(missing_ok=True)
-
+        anomaly_score = run_autotsad(args)
+        if(os.path.isfile(csv_path)):
+            os.remove(csv_path)
+        if(os.path.isdir("results-autotsad")):
+            shutil.rmtree("results-autotsad")
+        
         return anomaly_score
     
     

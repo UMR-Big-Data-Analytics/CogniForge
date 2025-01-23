@@ -29,7 +29,6 @@ def save_univariate_time_series(df: pd.DataFrame, selected_column: str, output_p
 
     # Save to CSV
     univariate_df.to_csv(output_path, index=False, header=True)
-    st.write(f"Univariate time series saved to: {output_path}")
 
 def run_anomaly_detection(algorithm: AnomalyDetector, data: np.ndarray) -> np.ndarray:
     anomaly_score = algorithm.detect(data)
@@ -92,7 +91,15 @@ if data is not None and df is not None:
                         save_univariate_time_series(df, column_name, temp_csv_path)
 
                         anomaly_score = algorithm.detect(temp_csv_path)
-
+                        anomaly_score_downsampled = lttb.downsample(
+                                                    np.c_[np.arange(len(anomaly_score)).astype(np.float32),anomaly_score,],1000,
+                                                        )
+                        df_plot = pd.DataFrame({
+                                                "Index": anomaly_score_downsampled[:, 0],
+                                                "Anomaly Score": anomaly_score_downsampled[:, 1],
+                                                }
+                                                ).set_index("Index")
+                        st.line_chart(df_plot)
                         st.write("## Upload Score")
                         FURTHRmind("upload").upload_csv(
                                 pd.DataFrame({"score": anomaly_score}),

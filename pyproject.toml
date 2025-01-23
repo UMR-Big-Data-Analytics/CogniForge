@@ -6,7 +6,7 @@ authors = ["wenig <phillip.wenig@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.11"
+python = ">=3.10,<3.12"
 streamlit = "^1.34.0"
 requests = "^2.31.0"
 python-dotenv = "^1.0.1"
