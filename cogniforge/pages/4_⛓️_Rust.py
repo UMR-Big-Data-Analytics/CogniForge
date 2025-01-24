@@ -78,7 +78,7 @@ model = images_result = None # else last if can fail
 with col1:
     st.write("## Choose Model")
     model_widget = FURTHRmind(id="model")
-    model_widget.force_group_id = config.furthr['models']['group_id']
+    model_widget.force_group_id = config.furthr['model_group_id']
     model_widget.container_category = "Code"
     model_widget.expected_fielddata = {
         'Model Purpose': "Rust Prediction"
@@ -87,6 +87,7 @@ with col1:
 
     if model_widget.selected is not None:
         model_result = model_widget.download_bytes(model_widget.selected.files[0])
+
         if model_result is not None:
             model_bytes, model_name = model_result
 
@@ -102,6 +103,7 @@ with col2:
     images_widget.file_extension = "tiff"
     images_widget.select_container()
     images_result = images_widget.download_bytes()
+    
     if images_result is not None:
         images_bytes = [o[0] for o in images_result]
         st.write("loaded", len(images_bytes), "samples")
