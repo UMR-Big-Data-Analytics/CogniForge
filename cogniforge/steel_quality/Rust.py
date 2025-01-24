@@ -19,7 +19,7 @@ def load_and_preprocess_data(images_bytes, normalize, GrayScale, pretrain, name)
     image_arrays = []
 
     # loading the images and extracting Rz values as labels
-    for img_file in images_result:
+    for img_file in images_bytes:
         with Image.open(img_file) as im:
             if GrayScale:
                 im_array = np.array(im.convert("RGB"))
@@ -71,11 +71,18 @@ def predict(model, X, classification):
 
     return predictions
 
+tab_data, tab_training, tab_model, tab_prediction = st.tabs(["Data", "Model Training", "Model Selection", "Prediction Analysis"])
 
-col1, col2 = st.columns(2)
-model = images_result = None # else last if can fail
+with tab_data:
+    st.write("## Choose Images")
+    images_widget = FURTHRmind(id="image")
+    images_widget.file_extension = "tiff"
+    images_widget.select_container()
 
-with col1:
+with tab_training:
+    st.write("Not implemented yet.")
+
+with tab_model:
     st.write("## Choose Model")
     model_widget = FURTHRmind(id="model")
     model_widget.force_group_id = config.furthr['model_group_id']
@@ -85,34 +92,20 @@ with col1:
     }
     model_widget.select_container()
 
-    if model_widget.selected is not None:
-        model_result = model_widget.download_bytes(model_widget.selected.files[0])
-
-        if model_result is not None:
-            model_bytes, model_name = model_result
-
-            with tempfile.NamedTemporaryFile(delete_on_close=False, suffix=".keras") as fh:
-                fh.write(model_bytes.getvalue())
-                fh.close()
-                model = tf.keras.models.load_model(fh.name)
-            st.write("load complete")
-
-with col2:
-    st.write("## Choose Images")
-    images_widget = FURTHRmind(id="image")
-    images_widget.file_extension = "tiff"
-    images_widget.select_container()
-    images_result = images_widget.download_bytes()
-    
-    if images_result is not None:
-        images_bytes = [o[0] for o in images_result]
-        st.write("loaded", len(images_bytes), "samples")
-
-if images_result is not None and model is not None:
+with tab_prediction:
     if st.button("Predict"):
+        model_bytes, model_name = model_widget.download_bytes(model_widget.selected.files[0], confirm_load=False)
         model_name, normalize, grayscale, pretrained = parse_model_name_and_normalize(
             model_name
         )
+
+        with tempfile.NamedTemporaryFile(delete_on_close=False, suffix=".keras") as fh:
+                fh.write(model_bytes.getvalue())
+                fh.close()
+                model = tf.keras.models.load_model(fh.name)
+
+        images_result = images_widget.download_bytes(confirm_load=False)
+        images_bytes = [o[0] for o in images_result]
         preprocessed_images = load_and_preprocess_data(
             images_bytes, normalize, grayscale, pretrained, model_name
         )
