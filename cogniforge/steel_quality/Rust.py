@@ -94,23 +94,27 @@ with tab_model:
 
 with tab_prediction:
     if st.button("Predict"):
-        model_bytes, model_name = model_widget.download_bytes(model_widget.selected.files[0], confirm_load=False)
-        model_name, normalize, grayscale, pretrained = parse_model_name_and_normalize(
-            model_name
-        )
+        with st.spinner("Loading model..."):
+            model_bytes, model_name = model_widget.download_bytes(model_widget.selected.files[0], confirm_load=False)
+            model_name, normalize, grayscale, pretrained = parse_model_name_and_normalize(
+                model_name
+            )
 
-        with tempfile.NamedTemporaryFile(delete_on_close=False, suffix=".keras") as fh:
+            with tempfile.NamedTemporaryFile(delete_on_close=False, suffix=".keras") as fh:
                 fh.write(model_bytes.getvalue())
                 fh.close()
                 model = tf.keras.models.load_model(fh.name)
 
-        images_result = images_widget.download_bytes(confirm_load=False)
-        images_bytes = [o[0] for o in images_result]
-        preprocessed_images = load_and_preprocess_data(
-            images_bytes, normalize, grayscale, pretrained, model_name
-        )
+        with st.spinner("Loading images..."):
+            images_result = images_widget.download_bytes(confirm_load=False)
+            images_bytes = [o[0] for o in images_result]
+            preprocessed_images = load_and_preprocess_data(
+                images_bytes, normalize, grayscale, pretrained, model_name
+            )
 
-        predictions = predict(model, preprocessed_images, classification=True)
+        with st.spinner("Running prediction..."):
+            predictions = predict(model, preprocessed_images, classification=True)
+
         it = np.nditer(predictions, flags=['c_index'])
 
         for prediction in it:
