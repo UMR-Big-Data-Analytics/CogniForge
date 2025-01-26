@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from io import StringIO
 import pandas as pd
 import streamlit as st
-import csv
 from .state_button import button
 
 
@@ -12,7 +11,7 @@ class DataLoader:
     df: pd.DataFrame = None
     delimiter: str = ";"
     decimal: str = ","
-    header: int = 1
+    header: int = 0
     skip_blank_lines: bool = True
     skiprows: int = 0
     columns: list = None
@@ -127,6 +126,8 @@ class DataLoader:
         st.write(f"Showing rows {start + 1} to {end} out of {total_rows}")
 
         page_df = df.iloc[start:end].copy()
+        page_df.index = range(1, len(page_df) + 1)
+
         number_cols = page_df.select_dtypes(['float64', 'float32']).columns
         for col in number_cols:
             page_df[col] = page_df[col].apply(
@@ -154,6 +155,7 @@ class DataLoader:
                 display_df[col] = display_df[col].apply(
                     lambda x: f'{float(x):.6f}'.replace(',', '.') if pd.notnull(x) else x)
 
+            display_df.index = range(1, len(display_df) + 1)
             st.dataframe(display_df, use_container_width=True, height=350)
 
     def get_dataframe(self) -> pd.DataFrame:
