@@ -89,6 +89,7 @@ class DataLoader:
                     thousands="."
                 )
                 # Variable name and meausuremunit are on the same line!!!
+                # TODO: measuement for kA°C does not behave well T_T
                 df.columns = [f"{col[0]}[{col[1]}]" if pd.notna(col[1]) else col[0] for col in df.columns]
 
             if nrows is not None:
