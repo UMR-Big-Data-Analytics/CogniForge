@@ -118,7 +118,7 @@ class FURTHRmind:
 
     __id: str
     __session: requests.Session
-    __fm: API
+    fm: API
     __selected: Group | Experiment | Sample | ResearchItem | File | None = None
     force_group_id: str | None = None
     file_extension: str | None = None
@@ -138,7 +138,7 @@ class FURTHRmind:
             "X-API-KEY": config.furthr['api_key'],
             "Content-Type": "application/json"
         })
-        self.__fm = API(
+        self.fm = API(
             host=config.furthr['host'],
             api_key=config.furthr['api_key'],
             project_id=config.furthr['project_id']
@@ -157,9 +157,9 @@ class FURTHRmind:
     def select_group(self):
         """Select a group from the project."""
         if self.force_group_id is not None:
-            self.__selected = self.__fm.Group.get(id=self.force_group_id)
+            self.__selected = self.fm.Group.get(id=self.force_group_id)
         else:
-            groups = self.__fm.Group.get_all()
+            groups = self.fm.Group.get_all()
             self.__selected = selectbox(groups, label="Choose a group", key=f"{self.__id}_group")
 
         if self.__selected is None:
@@ -207,14 +207,20 @@ class FURTHRmind:
         container: Experiment | ResearchItem | Sample | None = self.__selected
         if container is None:
             return
+        
+        if not container._fetched:
+            container.get()
 
         files: list[File] = container.files
 
         if self.file_extension:
             files = [f for f in files if f.name.endswith(self.file_extension)]
+            label = f"Choose a {self.file_extension} file"
+        else:
+            label = "Choose a file"
 
         self.__selected = selectbox(
-            files, label=f"Choose a {self.file_extension} file", key=f"{self.__id}_file"
+            files, label=label, key=f"{self.__id}_file"
         )
 
         if self.__selected is None:

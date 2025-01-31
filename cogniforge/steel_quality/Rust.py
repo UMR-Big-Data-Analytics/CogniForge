@@ -1,6 +1,7 @@
 import tempfile
 
 import numpy as np
+import pandas as pd
 import streamlit as st
 import tensorflow as tf
 from PIL import Image
@@ -115,15 +116,22 @@ with tab_prediction:
         with st.spinner("Running prediction..."):
             predictions = predict(model, preprocessed_images, classification=True)
 
-        it = np.nditer(predictions, flags=['c_index'])
+        with st.spinner("Preparing output..."):
+            rust_image_count = np.count_nonzero(predictions)
+            total_image_count = predictions.size
+            rust_percent = rust_image_count * 100 / total_image_count
 
-        for prediction in it:
-            if prediction:
-                first_rust_index = it.index
-                break
+            df = pd.DataFrame({
+                "Filename": [o[1] for o in images_result],
+                "Has rust": predictions,
+                "Link": ["/Photo?file_id=" + file.id for file in images_widget.selected.files]
+            })
+            df = df.sort_values(by="Has rust", ascending=False)
 
-        if first_rust_index is None:
-            st.write("Every patch is rustless.")
-        else:
-            rust_img = Image.open(images_bytes[first_rust_index])
-            st.image(rust_img, caption="Sample found with rust")
+        st.metric(label="Rust Samples", value=f"{rust_percent:.1f} %")
+        st.dataframe(
+            df,
+            column_config={
+                "Link": st.column_config.LinkColumn(display_text="Open image")
+            }
+        )
