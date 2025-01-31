@@ -103,10 +103,18 @@ def is_fielddata_match(
 ) -> bool:
     for field_name, expected_value in expected_fielddata.items():
         found_field = next((o for o in found_fielddata if o.field_name == field_name), None)
+
         if found_field is None:
             return False
         
-        found_value = found_field.value['name'] if found_field.field_type == "ComboBox" else found_field.value
+        if expected_value == "ANY":
+            continue
+        
+        if found_field.field_type == "ComboBox":
+            found_value = found_field.value['name']
+        else:
+            found_value = found_field.value
+
         if found_value != expected_value:
             return False
 
