@@ -29,15 +29,20 @@ wire = st.Page(
     "wire_quality/Wire_Quality.py", title="Wire Quality", icon="🔌"
 )
 
+photo = st.Page(
+    "Photo.py", title="Photo Viewer", icon="🖼️"
+)
+
 
 
 pg = st.navigation(
     {
-        "" : [home],
-        "Data Preprocessing" : [timeseries,image],
-        "Wire Quality" : [wire],
-        "Steel Quality" : [roughness,rust],
-        "Layer Quality" : [layer]
+        "": [home],
+        "Data Preprocessing": [timeseries,image],
+        "Wire Quality": [wire],
+        "Steel Quality": [roughness,rust],
+        "Layer Quality": [layer],
+        "Misc": [photo]
     }
 )
 
