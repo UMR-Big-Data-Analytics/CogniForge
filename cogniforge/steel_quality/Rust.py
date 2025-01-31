@@ -67,9 +67,11 @@ with tab_data:
     if images_widget.selected:
         for single_field in images_widget.selected.fielddata:
             if single_field.field_name == 'Image Width':
-                images_width = single_field.value
+                images_width = int(single_field.value)
             if single_field.field_name == 'Image Height':
-                images_height = single_field.value
+                images_height = int(single_field.value)
+        
+        st.write(f"Resolution: {images_width}x{images_height} px")
 
 with tab_training:
     st.write("Not implemented yet.")
@@ -90,9 +92,41 @@ with tab_model:
             'Model Architecture': "ANY",
             'Data Normalization': "ANY",
             'Image Grayscaling': "ANY",
-            'Data Preprocessing': "ANY"
+            'Data Preprocessing': "ANY",
+            'Optimizer': "ANY",
+            'Activation Function': "ANY",
+            'Loss Function': "ANY"
         }
         model_widget.select_container()
+
+        if model_widget.selected:
+            for single_field in model_widget.selected.fielddata:
+                if single_field.field_name == 'Model Architecture':
+                    model_name = single_field.value
+                elif single_field.field_name == 'Data Normalization':
+                    normalize = bool(single_field.value)
+                elif single_field.field_name == 'Image Grayscaling':
+                    grayscale = bool(single_field.value)
+                elif single_field.field_name == 'Data Preprocessing':
+                    pretrained = bool(single_field.value)
+                elif single_field.field_name == 'Optimizer':
+                    optimizer = single_field.value
+                elif single_field.field_name == 'Activation Function':
+                    activation = single_field.value
+                elif single_field.field_name == 'Loss Function':
+                    loss = single_field.value
+            
+            st.write("### Model Properties")
+            st.table({
+                'Model Architecture': model_name,
+                'Expected Resolution': f"{images_width}x{images_height} px",
+                'Data Normalization': str(normalize),
+                'Image Grayscaling': str(grayscale),
+                'Data Preprocessing': str(pretrained),
+                'Optimizer': optimizer,
+                'Activation Function': activation,
+                'Loss Function': loss
+            })
     else:
         st.write("Please select the data first. Then compatible models will be shown.")
 
@@ -102,16 +136,6 @@ with tab_prediction:
     if st.button("Predict", disabled=is_prediction_blocked):
         with st.spinner("Loading model... (1/4)"):
             model_bytes, _ = model_widget.download_bytes(model_widget.selected.files[0], confirm_load=False)
-
-            for single_field in model_widget.selected.fielddata:
-                if single_field.field_name == 'Model Architecture':
-                    model_name = single_field.value
-                elif single_field.field_name == 'Data Normalization':
-                    normalize = single_field.value
-                elif single_field.field_name == 'Image Grayscaling':
-                    grayscale = single_field.value
-                elif single_field.field_name == 'Data Preprocessing':
-                    pretrained = single_field.value
 
             with tempfile.NamedTemporaryFile(delete_on_close=False, suffix=".keras") as fh:
                 fh.write(model_bytes.getvalue())
