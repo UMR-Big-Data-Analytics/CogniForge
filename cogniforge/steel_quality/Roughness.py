@@ -93,7 +93,7 @@ with col1:
         }
     )
     if code_item is not None:
-        model_result = model_widget.download_bytes(code_item.files[0])
+        model_result = model_widget.download_bytes_button(code_item.files[0])
         if model_result is not None:
             model_bytes, model_name = model_result
 

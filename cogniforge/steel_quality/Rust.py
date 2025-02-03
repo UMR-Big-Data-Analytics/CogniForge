@@ -6,7 +6,7 @@ import streamlit as st
 import tensorflow as tf
 from PIL import Image
 
-from utils.furthr import FURTHRmind
+from utils.furthr import FURTHRmind, download_item_bytes, hash_furthr_item
 import config
 
 st.set_page_config(page_title="CogniForge | Rust", page_icon="⛓️")
@@ -16,13 +16,25 @@ st.write("""# Rust Prediction
 This page is for the Rust tool developed by Valerie Durbach.""")
 
 
-def load_and_preprocess_data(images_bytes, normalize, GrayScale, pretrain, name):
+@st.cache_resource(hash_funcs={"furthrmind.collection.file.File": hash_furthr_item})
+def load_model(model_file):
+    model_bytes, _ = download_item_bytes(model_file)
+
+    with tempfile.NamedTemporaryFile(delete_on_close=False, suffix=".keras") as fh:
+        fh.write(model_bytes.getvalue())
+        fh.close()
+        model = tf.keras.models.load_model(fh.name)
+    return model
+
+
+@st.cache_data
+def load_images(images_container, architecture, normalize, grayscale):
+    images_result = download_item_bytes(images_container)
     image_arrays = []
 
-    # loading the images and extracting Rz values as labels
-    for img_file in images_bytes:
+    for img_file, _ in images_result:
         with Image.open(img_file) as im:
-            if GrayScale:
+            if grayscale:
                 im_array = np.array(im.convert("RGB"))
                 im = tf.image.rgb_to_grayscale(im_array).numpy()
             image_arrays.append(np.array(im))
@@ -30,26 +42,42 @@ def load_and_preprocess_data(images_bytes, normalize, GrayScale, pretrain, name)
     X = image_arrays
     X = np.array([np.array(val) for val in X])
 
-    if pretrain:
-        # FIXME
-        preprocess_function = getattr(tf.keras.applications, name).preprocess_input
+    try:
+        preprocess_function = getattr(tf.keras.applications, architecture).preprocess_input
         X = preprocess_function(X)
-    else:
+    except AttributeError:
         if normalize:
             X = X / 225.0
+        
+    return images_result, X
 
-    return X
 
-
-def predict(model, X, classification):
+@st.cache_data
+def predict(model, X, _classification):
     # Make predictions
     predictions = np.asarray(model.predict(X))
 
-    if classification:
+    if _classification:
         # only for the Classification Task
         predictions = np.argmax(predictions, axis=1)
 
     return predictions
+
+
+@st.cache_data
+def format_output(images_container, images_result, predictions):
+    rust_image_count = np.count_nonzero(predictions)
+    total_image_count = predictions.size
+    rust_percent = rust_image_count * 100 / total_image_count
+
+    df = pd.DataFrame({
+        "Filename": [o[1] for o in images_result],
+        "Has rust": predictions,
+        "Link": ["/Photo?file_id=" + file.id for file in images_container.files]
+    })
+    df = df.sort_values(by="Has rust", ascending=False)
+    return rust_percent, df
+
 
 tab_data, tab_training, tab_model, tab_prediction = st.tabs(["Data", "Model Training", "Model Selection", "Prediction Analysis"])
 
@@ -92,7 +120,6 @@ with tab_model:
             'Model Architecture': "ANY",
             'Data Normalization': "ANY",
             'Image Grayscaling': "ANY",
-            'Data Preprocessing': "ANY",
             'Optimizer': "ANY",
             'Activation Function': "ANY",
             'Loss Function': "ANY"
@@ -107,8 +134,6 @@ with tab_model:
                     normalize = bool(single_field.value)
                 elif single_field.field_name == 'Image Grayscaling':
                     grayscale = bool(single_field.value)
-                elif single_field.field_name == 'Data Preprocessing':
-                    pretrained = bool(single_field.value)
                 elif single_field.field_name == 'Optimizer':
                     optimizer = single_field.value
                 elif single_field.field_name == 'Activation Function':
@@ -122,7 +147,6 @@ with tab_model:
                 'Expected Resolution': f"{images_width}x{images_height} px",
                 'Data Normalization': str(normalize),
                 'Image Grayscaling': str(grayscale),
-                'Data Preprocessing': str(pretrained),
                 'Optimizer': optimizer,
                 'Activation Function': activation,
                 'Loss Function': loss
@@ -134,35 +158,10 @@ with tab_prediction:
     is_prediction_blocked = not (images_widget.selected and model_widget.selected)
 
     if st.button("Predict", disabled=is_prediction_blocked):
-        with st.spinner("Loading model... (1/4)"):
-            model_bytes, _ = model_widget.download_bytes(model_widget.selected.files[0], confirm_load=False)
-
-            with tempfile.NamedTemporaryFile(delete_on_close=False, suffix=".keras") as fh:
-                fh.write(model_bytes.getvalue())
-                fh.close()
-                model = tf.keras.models.load_model(fh.name)
-
-        with st.spinner("Loading images... (2/4)"):
-            images_result = images_widget.download_bytes(confirm_load=False)
-            images_bytes = [o[0] for o in images_result]
-            preprocessed_images = load_and_preprocess_data(
-                images_bytes, normalize, grayscale, pretrained, model_name
-            )
-
-        with st.spinner("Running prediction... (3/4)"):
-            predictions = predict(model, preprocessed_images, classification=True)
-
-        with st.spinner("Preparing output... (4/4)"):
-            rust_image_count = np.count_nonzero(predictions)
-            total_image_count = predictions.size
-            rust_percent = rust_image_count * 100 / total_image_count
-
-            df = pd.DataFrame({
-                "Filename": [o[1] for o in images_result],
-                "Has rust": predictions,
-                "Link": ["/Photo?file_id=" + file.id for file in images_widget.selected.files]
-            })
-            df = df.sort_values(by="Has rust", ascending=False)
+        model = load_model(model_widget.selected.files[0])
+        images_result, preprocessed_images = load_images(images_widget.selected, model_name, normalize, grayscale)
+        predictions = predict(model, preprocessed_images, _classification=True)
+        rust_percent, df = format_output(images_widget.selected, images_result, predictions)
 
         st.metric(label="Rust Samples", value=f"{rust_percent:.1f} %")
         st.dataframe(

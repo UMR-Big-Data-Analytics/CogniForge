@@ -51,7 +51,7 @@ with st.expander("Download Data from FURTHRmind"):
     downloader = FURTHRmind("download")
     downloader.file_extension = "csv"
     downloader.select_file()
-    data = downloader.download_string()
+    data = downloader.download_string_button()
 
 if data is not None:
     with st.expander("Parse Data"):

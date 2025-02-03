@@ -1,6 +1,4 @@
-import os
 import tempfile
-from enum import Enum
 from io import BytesIO, StringIO
 import itertools
 from typing import Callable, Any
@@ -15,86 +13,91 @@ import config
 
 from .object_select_box import selectbox
 from .state_button import button
+from . import http_cache
 
 
-@st.cache_data
-def api_get(url: str, headers: dict) -> dict:
-    """Get data from the FURTHRmind API."""
-    response = requests.get(url, headers=headers)
-    return response.json()["results"]
-
-
-@st.cache_data
-def api_get_string(
-    url: str, headers: dict, chunk_size: int = 8192000
-) -> StringIO | requests.Response:
-    """Get a CSV file from the FURTHRmind API."""
-    response = requests.get(url, headers=headers)
-    if response.ok:
-        bytes = b""
-        for chunk in response.iter_content(chunk_size=chunk_size):
-            if chunk:
-                bytes += chunk
-        return StringIO(bytes.decode("latin"))
-    else:
-        return response
-
-
-@st.cache_data
-def api_get_bytes(
-    url: str, headers: dict, chunk_size: int = 8192000
-) -> BytesIO | requests.Response:
-    """Get a CSV file from the FURTHRmind API."""
-    response = requests.get(url, headers=headers)
-    if response.ok:
-        bytes_file = b""
-        for chunk in response.iter_content(chunk_size=chunk_size):
-            if chunk:
-                bytes_file += chunk
-        return BytesIO(bytes_file)
-    else:
-        return response
-
-
-@st.cache_data
-def _read_csv_spraying(csv: StringIO) -> pd.DataFrame:
-    st.write(csv)
-    return pd.read_csv(
-        csv,
-        sep=";",
-        index_col=0,
-        decimal=",",
-        header=0,
-        skip_blank_lines=True,
-        skiprows=[1],
-        converters={
-            "Noise": lambda x: float(x.replace(",", ".")) if "," in x else 0.0,
-            "Drahtrollendrehzahl": lambda x: (
-                float(x.replace(",", ".")) if "," in x else 0.0
-            ),
-        },
-        encoding="latin",
+@st.cache_resource
+def get_furthr_client():
+    session = requests.Session()
+    session.headers.update({
+        "X-API-KEY": config.furthr['api_key'],
+        "Content-Type": "application/json"
+    })
+    fm = API(
+        host=config.furthr['host'],
+        api_key=config.furthr['api_key'],
+        project_id=config.furthr['project_id']
     )
+    return fm, session
 
 
-@st.cache_data
-def _read_csv_wire(csv: StringIO) -> pd.DataFrame:
-    return pd.read_csv(
-        csv,
-        sep=";",
-        index_col=0,
-        decimal=",",
-        header=0,
-        skip_blank_lines=True,
-        encoding="latin",
-    )
+def __download_item(
+    item: Experiment | Sample | ResearchItem | File | None,
+    file_extension: str | None,
+    download_fn: Callable[[str, dict], BytesIO | StringIO | requests.Response]
+) -> tuple[BytesIO, str] | tuple[StringIO, str] | None:
+    if item is None:
+        return None
+    
+    if isinstance(item, Group):
+        st.error("Cannot download group")
+        return None
+    
+    _, session = get_furthr_client()
+    print(dict(session.headers))
+    
+    if isinstance(item, File):
+        b = download_fn(f"{config.furthr['host']}files/{item.id}", dict(session.headers))
+        if isinstance(b, (BytesIO, StringIO)):
+            return (b, item.name)
+        else:
+            st.error(f"Failed to download file {item.name}: {b.reason}")
+            return None
+    
+    # x must be a container when reaching this point
+    if not item._fetched:
+        item.get()
+
+    files = item.files
+
+    if file_extension:
+        files = [f for f in files if f.name.endswith(file_extension)]
+
+    if not files:
+        if file_extension:
+            st.error(f"No {file_extension} files found")
+        else:
+            st.error("No files found")
+        return None
+    
+    downloaded_files = []
+    bar_title = "Download in progress. Please wait."
+    my_bar = st.progress(0, text=bar_title)
+
+    for index, file in enumerate(files):
+        downloaded_files.append(__download_item(file, download_fn, file_extension))
+        my_bar.progress(index / len(files), text=bar_title)
+
+    my_bar.empty()
+    return downloaded_files
 
 
-class Process(Enum):
-    """Enum for the process type."""
+def download_item_string(
+    item: Experiment | Sample | ResearchItem | File | None,
+    file_extension: str | None = None
+ ) -> tuple[StringIO, str] | None: 
+    return __download_item(item, file_extension, http_cache.get_as_string)
 
-    SPRAYING = "Spraying"
-    WIRE = "Wire"
+
+def download_item_bytes(
+    item: Experiment | Sample | ResearchItem | File | None,
+    file_extension: str | None = None
+ ) -> tuple[BytesIO, str] | None: 
+    return __download_item(item, file_extension, http_cache.get_as_bytes)
+
+
+def hash_furthr_item(item):
+    return item.id
 
 
 def is_fielddata_match(
@@ -125,7 +128,6 @@ class FURTHRmind:
     """FURTHRmind API interface."""
 
     __id: str
-    __session: requests.Session
     fm: API
     __selected: Group | Experiment | Sample | ResearchItem | File | None = None
     force_group_id: str | None = None
@@ -141,26 +143,7 @@ class FURTHRmind:
     def __init__(self, id: str = "furtherwidget"):
         """Setup the project for the API."""
         self.__id = id
-        self.__session = requests.Session()
-        self.__session.headers.update({
-            "X-API-KEY": config.furthr['api_key'],
-            "Content-Type": "application/json"
-        })
-        self.fm = API(
-            host=config.furthr['host'],
-            api_key=config.furthr['api_key'],
-            project_id=config.furthr['project_id']
-        )
-
-    @property
-    def url(self) -> str:
-        """Return the URL for the FURTHRmind API."""
-        return config.furthr['host'] + "api2/{endpoint}"
-
-    def get(self, endpoint: str) -> dict:
-        """Get data from the FURTHRmind database."""
-        url = self.url.format(endpoint=endpoint)
-        return api_get(url, dict(self.__session.headers))
+        self.fm, _ = get_furthr_client()
 
     def select_group(self):
         """Select a group from the project."""
@@ -236,75 +219,17 @@ class FURTHRmind:
                 st.error(f"No {self.file_extension} file found")
             else:
                 st.error("No file found")
-    
-    def __download_item(
-            self,
-            override_selected: Experiment | Sample | ResearchItem | File | None,
-            confirm_load: bool,
-            download_fn: Callable[[str, dict], BytesIO | StringIO | requests.Response]
-    ) -> tuple[BytesIO, str] | tuple[StringIO, str] | None:
-        x = override_selected or self.__selected
 
-        if x is None:
-            return None
-        
-        if isinstance(x, Group):
-            st.error("Cannot download group")
-            return None
-        
-        if confirm_load and not button("Load", "load" + self.__id, stateful=True):
-            return None
-        
-        if isinstance(x, File):
-            b = download_fn(f"{config.furthr['host']}files/{x.id}", dict(self.__session.headers))
-            if isinstance(b, (BytesIO, StringIO)):
-                return (b, x.name)
-            else:
-                st.error(f"Failed to download file {x.name}: {b.reason}")
-                return None
-        
-        # x must be a container when reaching this point
-        if not x._fetched:
-            x.get()
 
-        files = x.files
-
-        if self.file_extension:
-            files = [f for f in files if f.name.endswith(self.file_extension)]
-
-        if not files:
-            if self.file_extension:
-                st.error(f"No {self.file_extension} files found")
-            else:
-                st.error("No files found")
-            return None
-        
-        downloaded_files = []
-        bar_title = "Download in progress. Please wait."
-        my_bar = st.progress(0, text=bar_title)
-
-        for index, file in enumerate(files):
-            downloaded_files.append(self.__download_item(file, False, download_fn))
-            my_bar.progress(index / len(files), text=bar_title)
-
-        my_bar.empty()
-        return downloaded_files
-
-    def download_bytes(
-            self,
-            override_selected: Experiment | Sample | ResearchItem | File | None = None,
-            confirm_load: bool = True
-    ) -> tuple[BytesIO, str] | None:
+    def download_bytes_button(self) -> tuple[BytesIO, str] | None:
         """Download the selected item as bytes from the FURTHRmind database."""
-        return self.__download_item(override_selected, confirm_load, api_get_bytes)
+        if self.__selected and button("Load", "load" + self.id, stateful=True):
+            return download_item_bytes(self.__selected, self.file_extension)
     
-    def download_string(
-            self,
-            override_selected: Experiment | Sample | ResearchItem | File | None = None,
-            confirm_load:bool = True
-    ) -> tuple[BytesIO, str] | None:
+    def download_string_button(self) -> tuple[BytesIO, str] | None:
         """Download the selected item as string from the FURTHRmind database."""
-        return self.__download_item(override_selected, confirm_load, api_get_string)
+        if self.__selected and button("Load", "load" + self.id, stateful=True):
+            return download_item_string(self.__selected, self.file_extension)
     
     def upload_file(self, path_or_writer: str | Callable[[str], tuple[Any, str]]) -> None:
         """Upload a file to the FURTHRmind database."""

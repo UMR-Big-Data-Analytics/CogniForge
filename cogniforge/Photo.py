@@ -15,10 +15,10 @@ widget = FURTHRmind()
 if 'file_id' in st.query_params:
     file = File(st.query_params.file_id)
     file.id = st.query_params.file_id
-    data, filename = widget.download_bytes(file, confirm_load=False)
+    data, filename = widget.download_bytes_button(file, confirm_load=False)
 else:
     widget.select_file()
-    data, filename = widget.download_bytes() or (None, None)
+    data, filename = widget.download_bytes_button() or (None, None)
 
 if data:
     st.image(data, caption=filename or st.query_params.file_id)
