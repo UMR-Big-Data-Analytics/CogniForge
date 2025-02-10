@@ -27,35 +27,37 @@ def load_model(model_file):
     return model
 
 
-@st.cache_data
-def load_images(images_container, architecture, normalize, grayscale):
-    images_result = download_item_bytes(images_container)
-    image_arrays = []
+# need to do spinner ourself, else inner progress bar gets hidden
+@st.cache_data(show_spinner=False, hash_funcs={"furthrmind.collection.sample.Sample": hash_furthr_item})
+def load_images(images_container, architecture, grayscale, pretrain):
+    with st.spinner("Running `load_images(...)`."):
+        images_result = download_item_bytes(images_container)
+        image_arrays = []
 
-    for img_file, _ in images_result:
-        with Image.open(img_file) as im:
-            if grayscale:
-                im_array = np.array(im.convert("RGB"))
-                im = tf.image.rgb_to_grayscale(im_array).numpy()
-            image_arrays.append(np.array(im))
+        for img_file, _ in images_result:
+            with Image.open(img_file) as im:
+                if grayscale:
+                    im_array = np.array(im.convert("RGB"))
+                    im = tf.image.rgb_to_grayscale(im_array).numpy()
+                image_arrays.append(np.array(im))
 
-    X = image_arrays
-    X = np.array([np.array(val) for val in X])
+        X = image_arrays
+        X = np.array([np.array(val) for val in X])
 
-    try:
-        preprocess_function = getattr(tf.keras.applications, architecture).preprocess_input
-        X = preprocess_function(X)
-    except AttributeError:
-        if normalize:
-            X = X / 225.0
-        
+        if pretrain:
+            model_class = getattr(tf.keras.applications, architecture)
+            preprocess_function = getattr(model_class, 'preprocess_input', None)
+
+            if preprocess_function:
+                X = preprocess_function(X)
+            
     return images_result, X
 
 
 @st.cache_data
-def predict(model, X, _classification):
+def predict(_model, _X, _classification, custom_cache_key):
     # Make predictions
-    predictions = np.asarray(model.predict(X))
+    predictions = np.asarray(_model.predict(_X))
 
     if _classification:
         # only for the Classification Task
@@ -65,15 +67,15 @@ def predict(model, X, _classification):
 
 
 @st.cache_data
-def format_output(images_container, images_result, predictions):
-    rust_image_count = np.count_nonzero(predictions)
-    total_image_count = predictions.size
+def format_output(_images_container, _images_result, _predictions, custom_cache_key):
+    rust_image_count = np.count_nonzero(_predictions)
+    total_image_count = _predictions.size
     rust_percent = rust_image_count * 100 / total_image_count
 
     df = pd.DataFrame({
-        "Filename": [o[1] for o in images_result],
-        "Has rust": predictions,
-        "Link": ["/Photo?file_id=" + file.id for file in images_container.files]
+        "Filename": [o[1] for o in _images_result],
+        "Has rust": _predictions,
+        "Link": ["/Photo?file_id=" + file.id for file in _images_container.files]
     })
     df = df.sort_values(by="Has rust", ascending=False)
     return rust_percent, df
@@ -118,8 +120,8 @@ with tab_model:
             'Image Width': images_width,
             'Image Height': images_height,
             'Model Architecture': "ANY",
-            'Data Normalization': "ANY",
             'Image Grayscaling': "ANY",
+            'Data Preprocessing': "ANY",
             'Optimizer': "ANY",
             'Activation Function': "ANY",
             'Loss Function': "ANY"
@@ -130,10 +132,10 @@ with tab_model:
             for single_field in model_widget.selected.fielddata:
                 if single_field.field_name == 'Model Architecture':
                     model_name = single_field.value
-                elif single_field.field_name == 'Data Normalization':
-                    normalize = bool(single_field.value)
                 elif single_field.field_name == 'Image Grayscaling':
                     grayscale = bool(single_field.value)
+                elif single_field.field_name == 'Data Preprocessing':
+                    pretrained = bool(single_field.value)
                 elif single_field.field_name == 'Optimizer':
                     optimizer = single_field.value
                 elif single_field.field_name == 'Activation Function':
@@ -145,8 +147,8 @@ with tab_model:
             st.table({
                 'Model Architecture': model_name,
                 'Expected Resolution': f"{images_width}x{images_height} px",
-                'Data Normalization': str(normalize),
                 'Image Grayscaling': str(grayscale),
+                'Data Preprocessing': str(pretrained),
                 'Optimizer': optimizer,
                 'Activation Function': activation,
                 'Loss Function': loss
@@ -159,9 +161,10 @@ with tab_prediction:
 
     if st.button("Predict", disabled=is_prediction_blocked):
         model = load_model(model_widget.selected.files[0])
-        images_result, preprocessed_images = load_images(images_widget.selected, model_name, normalize, grayscale)
-        predictions = predict(model, preprocessed_images, _classification=True)
-        rust_percent, df = format_output(images_widget.selected, images_result, predictions)
+        images_result, preprocessed_images = load_images(images_widget.selected, model_name, grayscale, pretrained)
+        custom_cache_key = (model_widget.selected.id, images_widget.selected.id)
+        predictions = predict(model, preprocessed_images, True, custom_cache_key)
+        rust_percent, df = format_output(images_widget.selected, images_result, predictions, custom_cache_key)
 
         st.metric(label="Rust Samples", value=f"{rust_percent:.1f} %")
         st.dataframe(

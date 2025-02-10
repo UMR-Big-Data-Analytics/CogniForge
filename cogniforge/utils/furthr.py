@@ -8,6 +8,7 @@ import requests
 import streamlit as st
 from furthrmind import Furthrmind as API
 from furthrmind.collection import Experiment, File, Group, ResearchItem, Sample, FieldData
+from furthrmind.collection.baseclass import BaseClass
 from furthrmind.file_loader import FileLoader
 import config
 
@@ -44,7 +45,6 @@ def __download_item(
         return None
     
     _, session = get_furthr_client()
-    print(dict(session.headers))
     
     if isinstance(item, File):
         b = download_fn(f"{config.furthr['host']}files/{item.id}", dict(session.headers))
@@ -75,7 +75,7 @@ def __download_item(
     my_bar = st.progress(0, text=bar_title)
 
     for index, file in enumerate(files):
-        downloaded_files.append(__download_item(file, download_fn, file_extension))
+        downloaded_files.append(__download_item(file, file_extension, download_fn))
         my_bar.progress(index / len(files), text=bar_title)
 
     my_bar.empty()
@@ -96,8 +96,8 @@ def download_item_bytes(
     return __download_item(item, file_extension, http_cache.get_as_bytes)
 
 
-def hash_furthr_item(item):
-    return item.id
+def hash_furthr_item(item: BaseClass) -> str:
+    return getattr(item, 'id', item._id)
 
 
 def is_fielddata_match(
