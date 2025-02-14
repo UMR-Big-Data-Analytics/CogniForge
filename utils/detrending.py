@@ -21,6 +21,7 @@ def initialize_session_state():
     if 'detrending_active' not in st.session_state:
         st.session_state.detrending_active = False
 
+
 def generate_detrend_column_name(original_column: str) -> str:
     """Append '_detrended' to the original column name."""
     return f"{original_column}_det"
@@ -76,6 +77,13 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
     if st.session_state.current_df is None:
         st.error("Please load data first using the Load Data Page.")
         return None
+
+     # Display current dataset info
+    df = st.session_state.current_df
+    dataset_name = st.session_state.get('current_dataset_name', 'Unnamed Dataset')
+    st.markdown(f"**Dataset Name:** {dataset_name}")
+    actual_rows = len(df)
+    st.write(f"Using a dataset with {actual_rows:,} rows")
 
     df = st.session_state.current_df
     chosen_columns = st.multiselect("Choose columns to analyze", options=df.columns[1:])
