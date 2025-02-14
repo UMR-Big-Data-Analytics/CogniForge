@@ -144,5 +144,12 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
                 st.session_state.current_df = df.copy()
 
     st.write("### Dataset Preview")
-    st.dataframe(df.head(15), use_container_width=True)
+    preview_df = df.head(15)
+    display_df = preview_df.copy()
+    numeric_cols = display_df.select_dtypes(include=['float64', 'float32']).columns
+    for col in numeric_cols:
+        display_df[col] = display_df[col].apply(
+            lambda x: f'{float(x):.6f}'.replace(',', '.') if pd.notnull(x) else x)
+
+    st.dataframe(display_df, use_container_width=True, height=350)
     return df
