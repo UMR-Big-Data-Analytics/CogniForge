@@ -8,7 +8,7 @@ from furthrmind.file_loader import FileLoader
 
 
 if 'ts_subpage' not in st.session_state:
-    st.session_state.ts_subpage = "Overview"
+    st.session_state.ts_subpage = "Overview page"
 if 'df' not in st.session_state:
     st.session_state.df = None
 if 'analysis_history' not in st.session_state:
