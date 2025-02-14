@@ -252,7 +252,120 @@ def visualize_smoothing(original_data, smoothed_data, column_name, alpha):
         if 'analysis_history' not in st.session_state:
             st.session_state.analysis_history = []
 
-    def analyze_smooth(df: pd.DataFrame = None) -> pd.DataFrame:
+
+    def calculate_column_volatility(column_data: np.ndarray) -> float:
+        """Calculate volatility for a given column."""
+        changes_between_points = np.diff(column_data)
+        spread_of_changes = np.std(changes_between_points)
+        spread_of_data = np.std(column_data)
+        volatility = spread_of_changes / spread_of_data
+        return max(0.1, min(0.9, 1 - volatility))
+
+    def check_smoothing_need(data: np.ndarray) -> bool:
+        """Determine if smoothing is need
+        Process:
+        - Calualate rolling standard deviation over a small windoww &
+        compare it to overall std   OR
+        - Check for outlier > 5% (i.e. it creates noises)  OR
+        - AVG of local change is higher than 10% mean
+        """
+        window = min(10, len(data) // 4)
+        rolling_std = pd.Series(data).rolling(window=window).std()
+        overall_std = np.std(data)
+        z_scores = np.abs(stats.zscore(data))
+        outlier_ratio = np.mean(z_scores > 3)
+        local_changes = np.abs(np.diff(data))
+        signal_mean = np.mean(np.abs(data))
+        test_alpha = 0.5
+        # Extra check
+        test_smoothed = exponential_smoothing(data, test_alpha)
+        test_stats = calculate_smoothing_statistics(data, test_smoothed)
+        needs_smoothing = (
+                ((rolling_std.mean() > 0.1 * overall_std) or
+                 (outlier_ratio > 0.05) or
+                 (local_changes.mean() > 0.1 * signal_mean)) and
+                (test_stats['noise_reduction'] > 0.5)
+        )
+        return needs_smoothing
+
+    # Weighted moving average
+    def exponential_smoothing(data: np.ndarray, alpha: float) -> np.ndarray:
+        """Apply exponential smoothing to the input data. """
+        smoothed = np.zeros(len(data))
+        smoothed[0] = data[0]
+        mask = np.isnan(data)
+        clean_data = np.where(mask, smoothed[0], data)
+
+        for t in range(1, len(data)):
+            if mask[t]:
+                smoothed[t] = smoothed[t - 1]
+            else:
+                smoothed[t] = alpha * clean_data[t] + (1 - alpha) * smoothed[t - 1]
+        return smoothed
+
+    def calculate_smoothing_statistics(original_data: np.ndarray, smoothed_data: np.ndarray) -> Dict[str, float]:
+        """Calculate statistics to evaluate the smoothing process."""
+        stdev_original = np.std(original_data)
+        stdev_smoothed = np.std(smoothed_data)
+        noise_reduction_percent = (stdev_original - stdev_smoothed) / stdev_original * 100
+        max_diff = np.max(np.abs(original_data - smoothed_data))
+        mean_abs_error = np.mean(np.abs(original_data - smoothed_data))
+        return {
+            'original_std': stdev_original,
+            'smoothed_std': stdev_smoothed,
+            'noise_reduction': noise_reduction_percent,
+            'max_deviation': max_diff,
+            'mean_absolute_error': mean_abs_error
+        }
+
+    # Before and after visualization
+    def visualize_smoothing(original_data, smoothed_data, column_name, alpha):
+        st.write(f"NumPy available: {np is not None}")
+        time_idx = np.arange(len(original_data))
+
+
+        fig = go.Figure()
+        # original data
+        fig.add_trace(
+            go.Scatter(x=time_idx, y=original_data, name="Original", line=dict(color='#1f77b4', width=1), opacity=0.8))
+        # smoothed data
+        fig.add_trace(go.Scatter(x=time_idx, y=smoothed_data, name="Smoothed", line=dict(color='#ff7f0e', width=2)))
+        # Configure plot
+        fig.update_layout(
+            height=400, title=f"Smoothing: {column_name} (α = {alpha:.2f})", showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            margin=dict(l=50, r=20, t=60, b=40)
+        )
+        fig.update_xaxes(title_text="Time Index")
+        fig.update_yaxes(title_text="Value")
+        st.plotly_chart(fig, use_container_width=True)
+
+    fig.update_layout(
+        height=400, title=f"Smoothing: {column_name} (α = {alpha:.2f})", showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=50, r=20, t=60, b=40)
+    )
+    fig.update_xaxes(title_text="Time Index")
+    fig.update_yaxes(title_text="Value")
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def record_smoothing_step(column: str, alpha: float, stats: dict):
+    """Record a smoothing operation in the session state history."""
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+    step = {
+        'timestamp': timestamp,
+        'column': column,
+        'alpha': alpha,
+        'noise_reduction': stats['noise_reduction'],
+        'result_column': f"{column}_smoothed"
+    }
+    st.session_state.smoothing_steps.append(step)
+    history_message = f"Smoothing applied to {column} (α={alpha:.2f}, noise reduction={stats['noise_reduction']:.1f}%)"
+    if not any(history_message in existing_message for existing_message in st.session_state.analysis_history):
+        st.session_state.analysis_history.append(history_message)
+
+def analyze_smooth(df: pd.DataFrame = None) -> pd.DataFrame:
         """Main function for smoothing"""
         initialize_session_state()
 
@@ -374,132 +487,3 @@ def visualize_smoothing(original_data, smoothed_data, column_name, alpha):
 
         st.dataframe(display_df, use_container_width=True, height=350)
         return df
-
-    def calculate_column_volatility(column_data: np.ndarray) -> float:
-        """Calculate volatility for a given column."""
-        changes_between_points = np.diff(column_data)
-        spread_of_changes = np.std(changes_between_points)
-        spread_of_data = np.std(column_data)
-        volatility = spread_of_changes / spread_of_data
-        return max(0.1, min(0.9, 1 - volatility))
-
-    def check_smoothing_need(data: np.ndarray) -> bool:
-        """Determine if smoothing is need
-        Process:
-        - Calualate rolling standard deviation over a small windoww &
-        compare it to overall std   OR
-        - Check for outlier > 5% (i.e. it creates noises)  OR
-        - AVG of local change is higher than 10% mean
-        """
-        window = min(10, len(data) // 4)
-        rolling_std = pd.Series(data).rolling(window=window).std()
-        overall_std = np.std(data)
-        z_scores = np.abs(stats.zscore(data))
-        outlier_ratio = np.mean(z_scores > 3)
-        local_changes = np.abs(np.diff(data))
-        signal_mean = np.mean(np.abs(data))
-        test_alpha = 0.5
-        # Extra check
-        test_smoothed = exponential_smoothing(data, test_alpha)
-        test_stats = calculate_smoothing_statistics(data, test_smoothed)
-        needs_smoothing = (
-                ((rolling_std.mean() > 0.1 * overall_std) or
-                 (outlier_ratio > 0.05) or
-                 (local_changes.mean() > 0.1 * signal_mean)) and
-                (test_stats['noise_reduction'] > 0.5)
-        )
-        return needs_smoothing
-
-    # Weighted moving average
-    def exponential_smoothing(data: np.ndarray, alpha: float) -> np.ndarray:
-        """Apply exponential smoothing to the input data. """
-        smoothed = np.zeros(len(data))
-        smoothed[0] = data[0]
-        mask = np.isnan(data)
-        clean_data = np.where(mask, smoothed[0], data)
-
-        for t in range(1, len(data)):
-            if mask[t]:
-                smoothed[t] = smoothed[t - 1]
-            else:
-                smoothed[t] = alpha * clean_data[t] + (1 - alpha) * smoothed[t - 1]
-        return smoothed
-
-    def calculate_smoothing_statistics(original_data: np.ndarray, smoothed_data: np.ndarray) -> Dict[str, float]:
-        """Calculate statistics to evaluate the smoothing process."""
-        stdev_original = np.std(original_data)
-        stdev_smoothed = np.std(smoothed_data)
-        noise_reduction_percent = (stdev_original - stdev_smoothed) / stdev_original * 100
-        max_diff = np.max(np.abs(original_data - smoothed_data))
-        mean_abs_error = np.mean(np.abs(original_data - smoothed_data))
-        return {
-            'original_std': stdev_original,
-            'smoothed_std': stdev_smoothed,
-            'noise_reduction': noise_reduction_percent,
-            'max_deviation': max_diff,
-            'mean_absolute_error': mean_abs_error
-        }
-
-    # Before and after visualization
-    def visualize_smoothing(original_data, smoothed_data, column_name, alpha):
-        st.write(f"NumPy available: {np is not None}")
-        time_idx = np.arange(len(original_data))
-
-
-        fig = go.Figure()
-        # original data
-        fig.add_trace(
-            go.Scatter(x=time_idx, y=original_data, name="Original", line=dict(color='#1f77b4', width=1), opacity=0.8))
-        # smoothed data
-        fig.add_trace(go.Scatter(x=time_idx, y=smoothed_data, name="Smoothed", line=dict(color='#ff7f0e', width=2)))
-        # Configure plot
-        fig.update_layout(
-            height=400, title=f"Smoothing: {column_name} (α = {alpha:.2f})", showlegend=True,
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            margin=dict(l=50, r=20, t=60, b=40)
-        )
-        fig.update_xaxes(title_text="Time Index")
-        fig.update_yaxes(title_text="Value")
-        st.plotly_chart(fig, use_container_width=True)
-
-    def record_smoothing_step(column: str, alpha: float, stats: dict):
-        """Record a smoothing operation in the session state history."""
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
-        step = {
-            'timestamp': timestamp,
-            'column': column,
-            'alpha': alpha,
-            'noise_reduction': stats['noise_reduction'],
-            'result_column': f"{column}_smoothed"
-        }
-        st.session_state.smoothing_steps.append(step)
-        history_message = f"Smoothing applied to {column} (α={alpha:.2f}, noise reduction={stats['noise_reduction']:.1f}%)"
-        if not any(history_message in existing_message for existing_message in st.session_state.analysis_history):
-            st.session_state.analysis_history.append(history_message)
-
-    fig.update_layout(
-        height=400, title=f"Smoothing: {column_name} (α = {alpha:.2f})", showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(l=50, r=20, t=60, b=40)
-    )
-    fig.update_xaxes(title_text="Time Index")
-    fig.update_yaxes(title_text="Value")
-    st.plotly_chart(fig, use_container_width=True)
-
-
-def record_smoothing_step(column: str, alpha: float, stats: dict):
-    """Record a smoothing operation in the session state history."""
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
-    step = {
-        'timestamp': timestamp,
-        'column': column,
-        'alpha': alpha,
-        'noise_reduction': stats['noise_reduction'],
-        'result_column': f"{column}_smoothed"
-    }
-    st.session_state.smoothing_steps.append(step)
-    history_message = f"Smoothing applied to {column} (α={alpha:.2f}, noise reduction={stats['noise_reduction']:.1f}%)"
-    if not any(history_message in existing_message for existing_message in st.session_state.analysis_history):
-        st.session_state.analysis_history.append(history_message)
-
-
