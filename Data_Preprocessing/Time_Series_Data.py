@@ -1,5 +1,4 @@
 import sys
-<<<<<<< HEAD
 import streamlit as st
 
 # Initialize subpage state if not exists
