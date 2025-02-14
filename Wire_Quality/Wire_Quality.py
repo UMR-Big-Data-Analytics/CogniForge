@@ -13,7 +13,7 @@ st.write(
     "Welcome to the Wire Quality tool. Here you can analyze and visualize the quality of your wire."
 )
 
-# Check if data is available in session state
+# use data loaded
 if 'df' not in st.session_state or st.session_state.df is None or st.session_state.df.empty:
     st.warning("Please load data first in the Load Data section.")
 else:
@@ -26,10 +26,7 @@ else:
     with st.expander("Plot Data"):
         try:
             if button("Plot data", "plot_data_wire", True):
-                if not df.empty and len(df) > 0:
-                    plot_sampled(df)
-                else:
-                    st.warning("Cannot plot empty dataset")
+                plot_sampled(df)
         except Exception as e:
             st.error(f"Error plotting data: {str(e)}")
 
