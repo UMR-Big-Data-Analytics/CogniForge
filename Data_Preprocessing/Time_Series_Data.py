@@ -82,7 +82,6 @@ if st.session_state.ts_subpage == "Load Data":
         info_message = ["📊 Current Dataset Information:"]
         if 'original_filename' in st.session_state:
             info_message.append(f"• Current dataset: {st.session_state.original_filename}")
-
         if st.session_state.use_full_dataset:
             info_message.append(f"• Using complete dataset ({len(st.session_state.df):,} rows)")
         else:
@@ -155,14 +154,11 @@ elif st.session_state.ts_subpage == "Plot Data":
     from utils.plotting import plot_sampled
     st.title("📊 Plot Data")
     if st.session_state.df is not None:
-        tab1 = st.selectbox("Select a Plot", ["Data Visualization", "Time Trend Analysis"])
-
-        if tab1 == "Data Visualization":
-            plot_sampled(st.session_state.df)
-        elif tab1 == "Time Trend Analysis":
-            st.warning("Please use the 'Detrend Data' tab to perform time trend analysis.")
+        st.subheader("Data Visualization")
+        plot_sampled(st.session_state.df)
     else:
         st.warning("Please load and process data first in the Load Data section.")
+
 
 
 elif st.session_state.ts_subpage == "Detrend Data":
@@ -193,6 +189,9 @@ elif st.session_state.ts_subpage == "Detrend Data":
     else:
         st.warning("Please load and process data first in the Load Data section.")
 
+
+
+
 elif st.session_state.ts_subpage == "Smooth Data":
     from utils.smoothing import analyze_smooth
     st.title("📉 Smooth Data")
@@ -203,18 +202,20 @@ elif st.session_state.ts_subpage == "Smooth Data":
                 st.write("### Current Analysis State")
                 for step in st.session_state.analysis_history:
                     st.write(f"- {step}")
-            # Option to revert
-            if st.session_state.smoothing_steps:
-                if st.button("Revert to Original Data"):
-                    handle_revert()
-                    st.success("Successfully reverted to original data")
-                    st.write("### Smoothing Summary")
-                    st.write("Total columns smoothed: 0")
-                    st.rerun()
+
             # smoothing analysis
             smoothed_df = analyze_smooth(st.session_state.df)
             if smoothed_df is not None:
                 st.session_state.df = smoothed_df
+                # Option to revert
+                if st.session_state.smoothing_steps:
+                    if st.button("Revert to Original Data"):
+                        handle_revert()
+                        st.success("Successfully reverted to original data")
+                        st.write("### Smoothing Summary")
+                        st.write("Total columns smoothed: 0")
+                        st.rerun()
+
                 if st.session_state.smoothing_steps:
                         st.write("### Smoothing Summary")
                         st.write(f"Total columns smoothed: {len(st.session_state.smoothing_steps)}")
@@ -234,9 +235,7 @@ elif st.session_state.ts_subpage == "Upload Results":
         generate_filename,
         upload_analyzed_data
     )
-
     st.title("📤 Upload Results")
-
     # Initialize session state variables
     if 'upload_clicked' not in st.session_state:
         st.session_state.upload_clicked = False
@@ -245,16 +244,12 @@ elif st.session_state.ts_subpage == "Upload Results":
     if 'upload_message' not in st.session_state:
         st.session_state.upload_message = None
 
-
     def handle_upload():
         st.session_state.upload_clicked = True
-
-
     if st.session_state.df is not None:
         try:
             show_analysis_history()
-
-            # Step 1: Choose Upload Location
+            # Choose Upload Location
             with st.expander("Step 1: Choose Upload Location", expanded=True):
                 fm, group, experiment, furthr = setup_upload_location()
                 if all([fm, group, experiment]):
@@ -265,7 +260,7 @@ elif st.session_state.ts_subpage == "Upload Results":
                     }
                     st.success(f"Selected folder: {group.name}")
 
-            # Step 2: Select Data to Upload
+            # Select Data to Upload
             if st.session_state.selected_location:
                 with st.expander("Step 2: Select Data to Upload", expanded=True):
                     widget_key_prefix = f"upload_{int(time.time())}"
@@ -274,11 +269,9 @@ elif st.session_state.ts_subpage == "Upload Results":
                     if data_to_upload is not None:
                         name = generate_filename(analysis_types, widget_key_prefix)
                         prepared_data = prepare_dataframe(data_to_upload)
-
-                        # Preview section
+                        # Preview
                         st.write("### Preview of Selected Data:")
                         st.dataframe(prepared_data.head(), use_container_width=True)
-
                         # File name and upload button
                         col1, col2 = st.columns([3, 1])
                         with col1:
@@ -290,7 +283,6 @@ elif st.session_state.ts_subpage == "Upload Results":
                                 type="primary",
                                 on_click=handle_upload
                             )
-
                         # Upload process
                         if st.session_state.upload_clicked:
                             st.session_state.upload_clicked = False
