@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from io import StringIO
 import pandas as pd
 import streamlit as st
-from .state_button import button
+from utils.state_button import button
 
 
 @dataclass
@@ -51,8 +51,6 @@ class DataLoader:
         total_rows = st.session_state.total_rows
         use_full_dataset = st.session_state.use_full_dataset
         current_dataset_name = st.session_state.current_dataset_name
-
-        # Reset all state variables to their defaults
         st.session_state.update({
             'total_rows': total_rows,
             'use_full_dataset': use_full_dataset,
@@ -70,146 +68,32 @@ class DataLoader:
             }
         })
 
-    def _process_submitted_data(self, parameters_changed):
-        """Process the submitted data and update state."""
-        try:
-            if parameters_changed:
-                st.session_state.processing_complete = False
-                st.session_state.current_df = None
-
-                st.session_state.form_params.update({
-                    'header': self.header,
-                    'skiprows': self.skiprows,
-                    'end_row': self.end_row
-                })
-
-            with st.spinner("Processing data..."):
-                filename = getattr(self.csv, 'name', 'Unknown Dataset')
-
-                # Check if this is a different dataset
-                if st.session_state.current_dataset_name is not None and st.session_state.current_dataset_name != filename:
-                    st.info(f"Dataset changed: {filename}")
-
-                st.session_state.current_dataset_name = filename
-
-                self.df = self._read_csv()
-
-                if self.df is not None and not self.df.empty:
-                    st.session_state.current_df = self.df.copy()
-                    st.session_state.processing_complete = True
-
-                    st.write("### Processed Data")
-                    if st.session_state.use_full_dataset:
-                        dataset_info = f"Using complete dataset ({len(self.df):,} rows)"
-                    else:
-                        actual_start = self.header + self.skiprows
-                        dataset_info = f"Using selected range: {len(self.df):,} rows (from row {actual_start:,} to {self.end_row:,})"
-                    st.write(dataset_info)
-
-                    # Display the processed data
-                    self._display_large_dataframe(self.df, page_size=1000)
-                    st.success("Data processed and ready for analysis!")
-                    return True
-                else:
-                    st.warning("No data was processed. Please check your parameters and try again.")
-                    return False
-
-        except Exception as e:
-            st.error(f"Data processing error: {str(e)}")
-            return False
-
-    def _process_submitted_data(self, parameters_changed):
-        """Process the submitted data and update state."""
-        try:
-            if parameters_changed:
-                st.session_state.processing_complete = False
-                st.session_state.current_df = None
-
-                # Reset form parameters in session state to defaults
-                st.session_state.form_params = {
-                    'header': 1,
-                    'skiprows': 0,
-                    'end_row': min(1000, st.session_state.total_rows)
-                }
-
-            with st.spinner("Processing data..."):
-
-                filename = getattr(self.csv, 'name', 'Unknown Dataset')
-                if st.session_state.current_dataset_name is not None and st.session_state.current_dataset_name != filename:
-                    st.info(f"Dataset changed: {filename}")
-                    st.session_state.total_rows = self._get_total_rows()
-
-                    # Reset all analysis-related parameters
-                    for key in list(st.session_state.keys()):
-                        if key.startswith('alpha_slider_') or key.startswith('apply_'):
-                            del st.session_state[key]
-                        # Reset any other analysis parameters
-                        elif key in ['smoothing_stats', 'column_alphas', 'detrend_stats',
-                                     'column_params', 'detrend_steps', 'smoothing_steps',
-                                     'detrending_active', 'smoothing_active', 'analysis_history']:
-                            if key in st.session_state:
-                                if isinstance(st.session_state[key], (list, dict)):
-                                    st.session_state[key] = type(st.session_state[key])()
-                                else:
-                                    st.session_state[key] = False
-
-                    st.session_state.form_params = {
-                        'header': 1,
-                        'skiprows': 0,
-                        'end_row': min(1000, st.session_state.total_rows)
-                    }
-
-                    self.header = 1
-                    self.skiprows = 0
-                    self.end_row = min(1000, st.session_state.total_rows)
-
-                    st.session_state.parameters_set = False
-                    st.session_state.use_full_dataset = False
-
-                    if 'dataset_mode' in st.session_state:
-                        del st.session_state['dataset_mode']
-
-                st.session_state.current_dataset_name = filename
-                self.df = self._read_csv()
-                if self.df is not None and not self.df.empty:
-                    st.session_state.current_df = self.df.copy()
-                    st.session_state.processing_complete = True
-
-                    st.write("### Processed Data")
-                    if st.session_state.use_full_dataset:
-                        dataset_info = f"Using complete dataset ({len(self.df):,} rows)"
-                    else:
-                        actual_start = self.header + self.skiprows
-                        dataset_info = f"Using selected range: {len(self.df):,} rows (from row {actual_start:,} to {self.end_row:,})"
-                    st.write(dataset_info)
-
-                    self._display_large_dataframe(self.df, page_size=1000)
-                    st.success("Data processed and ready for analysis!")
-                    return True
-                else:
-                    st.warning("No data was processed. Please check your parameters and try again.")
-                    return False
-
-        except Exception as e:
-            st.error(f"Data processing error: {str(e)}")
-            return False
 
     def _get_total_rows(self) -> int:
         """Returns the total number of rows in the CSV file."""
         try:
             self.csv.seek(0)
-            df = pd.read_csv(
-                self.csv,
-                sep=self.delimiter,
-                decimal=",",
-                encoding="latin1",
-                header=None
-            )
-            total_rows = len(df) - 1 if df.columns[0].dtype == object else len(df)
-            return total_rows
+            df = pd.read_csv(self.csv, sep=self.delimiter, encoding="latin1", header=None)
+            return len(df)
         except Exception as e:
             st.error(f"Error counting rows: {str(e)}")
             return 0
+
+    def _show_current_dataset_info(self):
+        """Shows information about the currently loaded dataset and any active analyses"""
+        warning_message = []
+        if st.session_state.current_df is not None and st.session_state.processing_complete:
+            if st.session_state.use_full_dataset:
+                warning_message.append(f"• Using complete dataset ({len(st.session_state.current_df):,} rows)")
+            else:
+                start_row = self.header + self.skiprows
+                warning_message.append(
+                    f"• Using selected range from row {start_row:,} to {self.end_row:,} ({len(st.session_state.current_df):,} rows)")
+            if 'detrending_active' in st.session_state and st.session_state.detrending_active:
+                warning_message.append("• Active detrending analysis in progress")
+            if 'smoothing_active' in st.session_state and st.session_state.smoothing_active:
+                warning_message.append("• Active smoothing analysis in progress")
+            return warning_message
 
     def _preview(self):
         """Shows a preview of the data"""
@@ -239,24 +123,9 @@ class DataLoader:
         st.dataframe(preview_df, use_container_width=True, height=350)
 
 
-    def _show_current_dataset_info(self):
-        """Shows information about the currently loaded dataset and any active analyses"""
-        warning_message = []
-        if st.session_state.current_df is not None and st.session_state.processing_complete:
-            if st.session_state.use_full_dataset:
-                warning_message.append(f"• Using complete dataset ({len(st.session_state.current_df):,} rows)")
-            else:
-                start_row = self.header + self.skiprows
-                warning_message.append(
-                    f"• Using selected range from row {start_row:,} to {self.end_row:,} ({len(st.session_state.current_df):,} rows)")
-            if 'detrending_active' in st.session_state and st.session_state.detrending_active:
-                warning_message.append("• Active detrending analysis in progress")
-            if 'smoothing_active' in st.session_state and st.session_state.smoothing_active:
-                warning_message.append("• Active smoothing analysis in progress")
-            return warning_message
 
     def _read_csv(self) -> pd.DataFrame:
-        """Reads and processes the CSV file according to specified parameters"""
+        """Reads and processes the CSV file"""
         self.csv.seek(0)
         try:
             first_row = pd.read_csv(self.csv, sep=self.delimiter, nrows=1, encoding="latin1")
@@ -273,7 +142,6 @@ class DataLoader:
                 thousands=".",
                 skip_blank_lines=self.skip_blank_lines
             )
-            # Adjust columns if needed
             if not has_combined_headers:
                 df.columns = [f"{col[0]}[{col[1]}]" if pd.notna(col[1]) else col[0] for col in df.columns]
             if not st.session_state.use_full_dataset:
@@ -322,64 +190,31 @@ class DataLoader:
         st.dataframe(page_df, use_container_width=True, height=350)
 
     def _check_for_existing_analysis(self):
-        """Check if there's existing analysis only when changing datasets."""
-        # Only check when it's a new dataset
+        """Check if there's existing analysis when changing datasets."""
         filename = getattr(self.csv, 'name', 'Unknown Dataset')
         if (st.session_state.current_dataset_name is None or
                 st.session_state.current_dataset_name == filename):
             return True
-
-        # Only show warning if changing to a different dataset AND have active analyses
         if (st.session_state.get('current_df') is not None and
                 (st.session_state.get('detrending_active') or
                  st.session_state.get('smoothing_active'))):
-            st.warning("⚠️ Loading new data will clear all existing analyses. "
-                       "Make sure to save your results before proceeding.")
+            st.warning("⚠️ Loading new data will clear all existing analyses.")
             proceed = st.button("Proceed with new data")
             return proceed
         return True
 
+
     def _process_submitted_data(self, parameters_changed):
-        """Process the submitted data and update state."""
+        """Process the submitted data"""
         try:
             if parameters_changed:
-                st.session_state.processing_complete = False
-                st.session_state.current_df = None
-
-                st.session_state.form_params.update({
-                    'header': self.header,
-                    'skiprows': self.skiprows,
-                    'end_row': self.end_row
-                })
-
+                self.reset_state()
             with st.spinner("Processing data..."):
                 filename = getattr(self.csv, 'name', 'Unknown Dataset')
-                if st.session_state.current_dataset_name is not None and st.session_state.current_dataset_name != filename:
+                if st.session_state.current_dataset_name != filename:
                     st.info(f"Dataset changed: {filename}")
                     st.session_state.total_rows = self._get_total_rows()
-                    for key in list(st.session_state.keys()):
-                        if key.startswith('alpha_slider_') or key.startswith('apply_'):
-                            del st.session_state[key]
-                        elif key in ['smoothing_stats', 'column_alphas', 'detrend_stats',
-                                     'column_params', 'detrend_steps', 'smoothing_steps',
-                                     'detrending_active', 'smoothing_active', 'analysis_history']:
-                            if key in st.session_state:
-                                if isinstance(st.session_state[key], (list, dict)):
-                                    st.session_state[key] = type(st.session_state[key])()
-                                else:
-                                    st.session_state[key] = False
-
-                    # Reset form parameters
-                    st.session_state.form_params = {
-                        'header': 1,
-                        'skiprows': 0,
-                        'end_row': min(1000, st.session_state.total_rows)
-                    }
-
-                    # Reset other relevant state variables
-                    st.session_state.parameters_set = False
-                    st.session_state.use_full_dataset = False
-                    st.rerun()
+                    self.reset_state()
 
                 st.session_state.current_dataset_name = filename
                 self.df = self._read_csv()
@@ -389,11 +224,9 @@ class DataLoader:
                     st.session_state.processing_complete = True
 
                     st.write("### Processed Data")
-                    if st.session_state.use_full_dataset:
-                        dataset_info = f"Using complete dataset ({len(self.df):,} rows)"
-                    else:
-                        actual_start = self.header + self.skiprows
-                        dataset_info = f"Using selected range: {len(self.df):,} rows (from row {actual_start:,} to {self.end_row:,})"
+                    dataset_info = (
+                        f"Using complete dataset ({len(self.df):,} rows)" if st.session_state.use_full_dataset
+                        else f"Using selected range: {len(self.df):,} rows (from row {self.header + self.skiprows:,} to {self.end_row:,})")
                     st.write(dataset_info)
 
                     self._display_large_dataframe(self.df, page_size=1000)
@@ -408,27 +241,26 @@ class DataLoader:
             return False
 
     def get_dataframe(self) -> pd.DataFrame:
-        """Main method to handle the data loading process"""
         try:
             filename = getattr(self.csv, 'name', 'Unknown Dataset')
-            current_dataset_name = st.session_state.get('current_dataset_name')
 
-            if current_dataset_name is not None and current_dataset_name != filename:
-                st.session_state.parameters_set = False
+            if st.session_state.current_dataset_name != filename:
+                st.info(f"New dataset detected: {filename}")
+                if not self._check_for_existing_analysis():
+                    return None
 
-            if not self._check_for_existing_analysis():
-                return None
+                st.session_state.total_rows = self._get_total_rows()
+                self.reset_state()
+                st.session_state.current_dataset_name = filename
 
             if not st.session_state.get('parameters_set', False):
                 self._preview()
 
-            # Dataset selection form
             st.write("### Dataset Selection")
-            filename = getattr(self.csv, 'name', 'Unknown Dataset')
             st.write(f"Dataset: {filename}")
             total_rows = st.session_state.total_rows
             st.write(f"Total rows in dataset: {total_rows:,}")
-            # Dataset mode selection
+
             use_full_dataset = st.checkbox(
                 "Use entire dataset",
                 value=st.session_state.use_full_dataset,
@@ -436,12 +268,14 @@ class DataLoader:
                 key="dataset_mode"
             )
 
-            # Update state if mode changed
             if use_full_dataset != st.session_state.use_full_dataset:
-                self.reset_state()
                 st.session_state.use_full_dataset = use_full_dataset
+                st.session_state.form_params = {
+                    'header': 1,
+                    'skiprows': 0,
+                    'end_row': total_rows if use_full_dataset else min(1000, total_rows)
+                }
 
-            # Create parameter selection form
             with st.form("dataset_selection_form", clear_on_submit=False):
                 if not use_full_dataset:
                     col1, col2, col3 = st.columns(3)
@@ -475,7 +309,6 @@ class DataLoader:
                             key="end_row_input"
                         )
 
-                    # Calculate and show the actual data range
                     actual_start_row = header + skiprows
                     actual_row_count = end_row - actual_start_row
                     st.write(
@@ -495,8 +328,13 @@ class DataLoader:
                 self.end_row = end_row
                 self.skip_blank_lines = skip_blank_lines
 
-                parameters_changed = True
-                if self._process_submitted_data(parameters_changed):
+                st.session_state.form_params = {
+                    'header': header,
+                    'skiprows': skiprows,
+                    'end_row': end_row
+                }
+
+                if self._process_submitted_data(True):
                     st.session_state.parameters_set = True
                     return self.df
             elif st.session_state.processing_complete and st.session_state.current_df is not None:
