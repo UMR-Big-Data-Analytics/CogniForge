@@ -3,6 +3,7 @@ import tempfile
 from dataclasses import dataclass, field
 from enum import Enum
 from io import BytesIO, StringIO
+import time
 
 import pandas as pd
 import requests
@@ -126,7 +127,13 @@ class FURTHRmind:
 
     def download_string_file(self, file: File) -> StringIO | None:
         """Download a file from the FURTHRmind database."""
+        placeholder = st.empty()
+        placeholder.info("⏳ Fetching data... Please wait!")
         csv = api_get_string(f"{self.host}files/{file.id}", dict(self.session.headers))
+        st.session_state.clicked["loaddownload"] = False
+        placeholder.success("✅ Data loaded successfully!")
+        time.sleep(1)
+        placeholder.empty() 
         if isinstance(csv, StringIO):
             return csv
         st.error(f"Failed to download file {file.name}: {csv.reason}")
@@ -208,8 +215,7 @@ class FURTHRmind:
         else:
             st.error("No group found")
 
-    def download_csv(self) -> StringIO | None:
-        """Download a CSV file from the FURTHRmind database."""
+    def download_csv(self) -> tuple[StringIO | None, str | None]:
         _fm = self.setup_project()
         group = self.select_group()
         if group is not None:
@@ -219,13 +225,10 @@ class FURTHRmind:
                 if file is not None:
                     if button("Load", "load" + self.id, stateful=True):
                         df = self.download_string_file(file)
-                        return df
-                else:
-                    st.error("No file found")
-            else:
-                st.error("No experiment or sample found")
-        else:
-            st.error("No group found")
+                        st.session_state.data = df
+                        st.session_state.fileName = file.name
+                        return df, file.name
+        return None, None
 
     def upload_csv(self, csv: pd.DataFrame, name: str) -> None:
         """Upload a CSV file to the FURTHRmind database."""
@@ -234,7 +237,7 @@ class FURTHRmind:
         if group is not None:
             experiment = self.select_experiment(group)
             if experiment is not None:
-                if st.button("Upload", "upload_anomaly_score"):
+                if button("Upload", "upload_anomaly_score",True):
                     with tempfile.TemporaryDirectory() as tmpdirname:
                         csv_path = os.path.join(tmpdirname, f"{name}.csv")
                         csv.to_csv(csv_path)
@@ -247,6 +250,8 @@ class FURTHRmind:
                                 "id": experiment.id,
                             },
                         )
+                        st.success("Anomaly Score Uploaded Successfully!")
+                        st.session_state.clicked["upload_anomaly_score"] = False
             else:
                 st.error("No experiment or sample found")
         else:

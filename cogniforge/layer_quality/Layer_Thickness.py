@@ -1,15 +1,18 @@
 import datetime as dt
+import time
 import sys
 
 import lttb
 import numpy as np
 import pandas as pd
 import streamlit as st
-
+import plotly.express as px
+import plotly.graph_objects as go
 sys.path.append("../cogniforge")
 from cogniforge.algorithms.anomaly_detection import (
     AnomalyDetector,
     AutoTSADAnomalyDetector,
+    IsolationForestAnomalyDetector,
     KMeansAnomalyDetector,
 )
 from cogniforge.utils.dataloader import DataLoader
@@ -30,26 +33,36 @@ def save_univariate_time_series(df: pd.DataFrame, selected_column: str, output_p
     # Save to CSV
     univariate_df.to_csv(output_path, index=False, header=True)
 
-def run_anomaly_detection(algorithm: AnomalyDetector, data: np.ndarray) -> np.ndarray:
-    anomaly_score = algorithm.detect(data)
+def plot_anomaly_detection(anomaly_score: np.ndarray) -> np.ndarray:
     anomaly_score_downsampled = lttb.downsample(
         np.c_[
-            np.arange(len(anomaly_score)).astype(np.float32),
+            df.index.values.astype(np.float32)[: len(anomaly_score)],
             anomaly_score,
         ],
-        1000,
+        100,
     )
     df_plot = pd.DataFrame(
         {
-            "Index": anomaly_score_downsampled[:, 0],
+            "Zeit": anomaly_score_downsampled[:, 0],
             "Anomaly Score": anomaly_score_downsampled[:, 1],
         }
-    ).set_index("Index")
-    st.line_chart(df_plot)
+    ).set_index("Zeit")
+
+    # Categorize points based on threshold
+    df_plot["Color"] = np.where(df_plot["Anomaly Score"] > 0.6, "Above 60%", "Below 60%")
+
+    # Plot with Plotly
+    fig = px.scatter(df_plot.reset_index(), x="Zeit", y="Anomaly Score", color="Color",
+                     color_discrete_map={"Above 60%": "red", "Below 60%": "blue"},
+                     title="Anomaly Score Visualization")
+
+    # Display in Streamlit
+    st.plotly_chart(fig)
+
     return anomaly_score
 
 
-st.set_page_config(page_title="CogniForge | Layer Thickness", page_icon="💦")
+#st.set_page_config(page_title="CogniForge | Layer Thickness", page_icon="💦")
 st.write("# Layer Thickness")
 st.write(
     "Welcome to the Layer Thickness tool. Here you can analyze and visualize the thickness of your layer"
@@ -58,65 +71,80 @@ st.write(
     "Upload your data to the [FURTHRmind](https://furthr.informatik.uni-marburg.de/) database. Then, here, you can choose the correct dataset and let our algorithms tell you the quality of your layer."
 )
 
-with st.expander("Download Data from FURTHRmind"):
-    data = FURTHRmind("download").download_csv()
+if "fileName" not in st.session_state:
+    st.session_state.fileName = None
+if "data" not in st.session_state:
+    st.session_state.data = None
+with st.status("Download Data from FURTHRmind", expanded=True):
+    data,filename = FURTHRmind("download").download_csv() or (None, None)
+if "anomalyNameChanged" not in st.session_state:
+    st.session_state.anomalyNameChanged = False
+if "anomaly_score" not in st.session_state:
+    st.session_state.anomaly_score = None
+    st.session_state.anomaly_algorithm = None
+if st.session_state.data is not None:
+    st.session_state.data.name = filename
+    tabs = st.tabs(["Data Preview", "Plot Data", "Analysis"])
+    with tabs[0]:
+        dl = DataLoader(csv=st.session_state.data)
+        df = dl.get_processedDataFrame()
 
-if data is not None:
-    with st.expander("Parse Data"):
-        dl = DataLoader(csv=data)
-        df = dl.get_dataframe()
+    if st.session_state.data is not None and df is not None:
+        with tabs[1]:
+                 plot_sampled(df)
 
-if data is not None and df is not None:
-    with st.expander("Plot Data"):
-        if button("Plot data", "plot_data_layer", True):
-            plot_sampled(df)
+        with tabs[2]:
+            # Allow column selection dynamically
+            algorithm: AnomalyDetector = selectbox(
+                [KMeansAnomalyDetector(), AutoTSADAnomalyDetector() , IsolationForestAnomalyDetector()],
+                format_name=lambda a: a.name(),
+                label="Choose an anomaly detector",
+            )
+            if "prev_algorithm" not in st.session_state:
+                st.session_state.prev_algorithm = None 
+            if algorithm.name() != st.session_state.prev_algorithm:
+                st.session_state.anomalyNameChanged = True
+                st.session_state.anomaly_score = None
+                st.session_state.anomaly_algorithm = None
+                st.session_state.prev_algorithm = algorithm.name()
+            if algorithm is not None:
+                algorithm.parameters()
+                if "anomaly_score" not in st.session_state:
+                    st.session_state.anomaly_score = None
+                    st.session_state.anomaly_algorithm = None
 
-    with st.expander("Analysis"):
-        # Allow column selection dynamically
-        algorithm: AnomalyDetector = selectbox(
-            [KMeansAnomalyDetector(), AutoTSADAnomalyDetector()],
-            format_name=lambda a: a.name(),
-            label="Choose an anomaly detector",
-        )
-        if algorithm is not None:
-            algorithm.parameters()
+                if isinstance(algorithm, AutoTSADAnomalyDetector):
+                    column_name = st.selectbox("Select a column for AutoTSAD", df.columns)
 
-            if isinstance(algorithm, AutoTSADAnomalyDetector):
-                # For AutoTSAD: Select a single column for univariate time series
-                column_name = st.selectbox("Select a column for AutoTSAD", df.columns)
-                if column_name:
-                    st.write(f"Selected column: {column_name}")
-                    if button(f"Run {algorithm.name()}", "run_autotsad", True):
-                        temp_csv_path = "temp_univariate_data.csv"
-                        save_univariate_time_series(df, column_name, temp_csv_path)
+                    if column_name:
+                        st.write(f"Selected column: {column_name}")
 
-                        anomaly_score = algorithm.detect(temp_csv_path)
-                        anomaly_score_downsampled = lttb.downsample(
-                                                    np.c_[np.arange(len(anomaly_score)).astype(np.float32),anomaly_score,],1000,
-                                                        )
-                        df_plot = pd.DataFrame({
-                                                "Index": anomaly_score_downsampled[:, 0],
-                                                "Anomaly Score": anomaly_score_downsampled[:, 1],
-                                                }
-                                                ).set_index("Index")
-                        st.line_chart(df_plot)
-                        st.write("## Upload Score")
-                        FURTHRmind("upload").upload_csv(
-                                pd.DataFrame({"score": anomaly_score}),
-                                f"anomaly_score-{algorithm.name()}-{dt.datetime.now().isoformat()}",
-                )
-            else:
-                # For other detectors: Allow multiselect for multiple columns
-                column_names = st.multiselect(
-                    "Choose columns", list(df.columns), default=list(df.columns)
-                )
-                if button(f"Run {algorithm.name()}", "run_algorithm", True):
-                    anomaly_score = run_anomaly_detection(
-                        algorithm, df[column_names].values
+                        # ✅ Run AutoTSAD when Button is Clicked
+                        if button(f"Run {algorithm.name()}", "run_autotsad", True):
+                            temp_csv_path = "temp_univariate_data.csv"
+                            save_univariate_time_series(df, column_name, temp_csv_path)
+                            st.session_state.anomaly_score = algorithm.detect(temp_csv_path) # Store anomaly score 
+                            st.session_state.clicked["run_autotsad"] = False  
+                            st.session_state.anomaly_algorithm = algorithm.name()
+                            st.session_state.anomalyNameChanged = False
+                else:
+                    # For other detectors: Allow multiselect for multiple columns
+                    column_names = st.multiselect(
+                        "Choose columns", list(df.columns), default=list(df.columns)
                     )
-                    st.write("## Upload Score")
-                    FURTHRmind("upload").upload_csv(
-                        pd.DataFrame({"score": anomaly_score}),
-                        f"anomaly_score-{algorithm.name()}-{dt.datetime.now().isoformat()}",
-                    )
+                    if button(f"Run {algorithm.name()}", "run_algorithm", True):
+                        anomaly_score = algorithm.detect(df[column_names].values)
+                        st.session_state.clicked["run_algorithm"] = False
+                        st.session_state.anomaly_score = anomaly_score  # Save anomaly score
+                        st.session_state.anomaly_algorithm = algorithm.name()
+                        st.session_state.anomalyNameChanged = False
 
+if st.session_state.anomaly_score is not None and st.session_state.anomaly_algorithm is not None and not st.session_state.anomalyNameChanged:
+    plot_anomaly_detection(st.session_state.anomaly_score)
+    upload_tab = st.tabs(["Upload Score"])[0]
+    with upload_tab:
+            st.write("## Uploading Anomaly Score...")
+            FURTHRmind("upload").upload_csv(
+                pd.DataFrame({"score": st.session_state.anomaly_score}),
+                f"{st.session_state.fileName}-anomaly_score-{st.session_state.anomaly_algorithm}-{dt.datetime.now().strftime('%Y-%m-%dT%H-%M-%S')}",
+            )

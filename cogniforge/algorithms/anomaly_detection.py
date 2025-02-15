@@ -88,8 +88,8 @@ class AutoTSADAnomalyDetector(AnomalyDetector):
         anomaly_score = run_autotsad(args)
         if(os.path.isfile(csv_path)):
             os.remove(csv_path)
-        if(os.path.isdir("results-autotsad")):
-            shutil.rmtree("results-autotsad")
+        # if(os.path.isdir("results-autotsad")):
+        #     shutil.rmtree("results-autotsad")
         
         return anomaly_score
     
@@ -136,6 +136,33 @@ class SpuckerCounter:
             count -= 1
 
         return count
+
+from sklearn.ensemble import IsolationForest
+
+class IsolationForestAnomalyDetector(AnomalyDetector):
+    def __init__(self, contamination: float = 0.05) -> None:
+        super().__init__()
+        self.contamination = contamination
+
+    def name(self):
+        return "Isolation Forest"
+
+    def parameters(self):
+        self.contamination = st.slider(
+            "Contamination (Anomaly Ratio)", 0.01, 0.5, self.contamination, step=0.01
+        )
+
+    def detect(self, data: np.ndarray) -> np.ndarray:
+        iso_forest = IsolationForest(contamination=self.contamination, random_state=42)
+        iso_forest.fit(data)
+
+        # Compute anomaly score (higher = more anomalous)
+        scores = -iso_forest.decision_function(data)  # Negative score means anomaly
+
+        # Normalize scores between 0 and 1
+        scores = (scores - scores.min()) / (scores.max() - scores.min())
+
+        return scores
 
 
 if __name__ == "__main__":

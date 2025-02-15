@@ -2,10 +2,10 @@ general:
   #tmp_path:
   #result_path:
   #cache_key:
-  #logging_level:
-  #use_timer:
-  #timer_logging_level:
-  #progress:
+  logging_level: 0
+  use_timer: no
+  timer_logging_level: 0
+  progress: no
   n_jobs: 20
   #seed:
   #max_algorithm_instances:
@@ -57,7 +57,7 @@ optimization:
   optuna_storage_type: "sqlite"
   optuna_storage_cleanup: yes
   #optuna_dashboard:
-  #optuna_logging_level:
+  optuna_logging_level: 0
   #n_trials_startup:
   #n_trials_sensitivity:
   #n_trials_step:
@@ -68,10 +68,6 @@ optimization:
   #stop_heuristic_optuna:
   #proxy_allowed_quality_deviation:
   algorithms:
-    - subsequence_lof
-    - subsequence_knn
-    - subsequence_if
-    - torsk
     - kmeans
     - dwt_mlead
   disabled: yes
