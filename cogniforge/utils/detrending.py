@@ -22,10 +22,6 @@ def initialize_session_state():
         st.session_state.detrending_active = False
 
 
-def generate_detrend_column_name(original_column: str) -> str:
-    """Append '_detrended' to the original column name."""
-    return f"{original_column}_det"
-
 def detect_trend(data: np.ndarray, timestamps: np.ndarray) -> dict:
     """Detect linear trend using linear regression."""
     slope, _, r_value, p_value, _ = stats.linregress(timestamps, data)
@@ -40,7 +36,7 @@ def record_detrend_step(column: str, method: str, params: dict):
         "column": column,
         "method": method,
         "params": params,
-        "result_column": generate_detrend_column_name(column),
+        "result_column": f"{column}_detrended",
     }
     st.session_state.detrend_steps.append(step)
 
@@ -146,7 +142,7 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
                     detrend_moving_average(data, params['window'])
                 )
 
-                result_column = generate_detrend_column_name(chosen_column)
+                result_column = f"{chosen_column}_detrended"
                 df[result_column] = detrended
                 record_detrend_step(chosen_column, detrend_method, params)
 
