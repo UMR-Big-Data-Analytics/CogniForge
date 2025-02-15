@@ -31,17 +31,21 @@ def detect_trend(data: np.ndarray, timestamps: np.ndarray) -> dict:
     slope, _, r_value, p_value, _ = stats.linregress(timestamps, data)
     return {'slope': slope, 'r_squared': r_value**2, 'p_value': p_value}
 
+
 def record_detrend_step(column: str, method: str, params: dict):
-    """Track detrending"""
+    """Track detrending with appropriate naming"""
+    timestamp = datetime.now()
     step = {
-        "timestamp": datetime.now(),
+        "timestamp": timestamp,
         "column": column,
         "method": method,
         "params": params,
         "result_column": generate_detrend_column_name(column),
     }
     st.session_state.detrend_steps.append(step)
-    history_message = f"Detrending applied to {column} )"
+
+    # Create history message with timestamp
+    history_message = f"[{timestamp.strftime('%Y-%m-%d %H:%M')}] {method} detrending applied to {column}"
     if not any(history_message in existing_message for existing_message in st.session_state.analysis_history):
         st.session_state.analysis_history.append(history_message)
 
@@ -84,6 +88,12 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
     st.markdown(f"**Dataset Name:** {dataset_name}")
     actual_rows = len(df)
     st.write(f"Using a dataset with {actual_rows:,} rows")
+
+    # Add analysis history expander here
+    if st.session_state.analysis_history:
+        with st.expander("Analysis History", expanded=False):
+            for message in st.session_state.analysis_history:
+                st.write(message)
 
     df = st.session_state.current_df
     chosen_columns = st.multiselect("Choose columns to analyze", options=df.columns[1:])

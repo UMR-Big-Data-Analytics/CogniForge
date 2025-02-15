@@ -183,10 +183,8 @@ class DataLoader:
 
         number_cols = page_df.select_dtypes(['float64', 'float32']).columns
         for col in number_cols:
-            page_df[col] = page_df[col].apply(
-                lambda x: f'{float(x):.6f}'.replace(',', '.') if pd.notna(x) else x
-            )
-
+            page_df[col] = page_df[col].map(
+                lambda x: f'{float(x):.6f}'.replace(',', '.') if isinstance(x, (float, int)) and pd.notnull(x) else x)
         st.dataframe(page_df, use_container_width=True, height=350)
 
     def _check_for_existing_analysis(self):
@@ -240,6 +238,7 @@ class DataLoader:
             st.error(f"Data processing error: {str(e)}")
             return False
 
+
     def get_dataframe(self) -> pd.DataFrame:
         try:
             filename = getattr(self.csv, 'name', 'Unknown Dataset')
@@ -260,6 +259,7 @@ class DataLoader:
             st.write(f"Dataset: {filename}")
             total_rows = st.session_state.total_rows
             st.write(f"Total rows in dataset: {total_rows:,}")
+
 
             use_full_dataset = st.checkbox(
                 "Use entire dataset",
