@@ -10,12 +10,13 @@ from furthrmind.file_loader import FileLoader
 # test test
 def show_analysis_history():
     """Display the history of analysis steps performed"""
-    st.write("### Analysis Steps Performed")
     if st.session_state.analysis_history:
-        for step in st.session_state.analysis_history:
-            st.write(f"- {step}")
+        with st.expander("Analysis History", expanded=False):
+            for step in st.session_state.analysis_history:
+                st.write(step)
     else:
-        st.write("No analysis steps performed yet")
+        with st.expander("Analysis History", expanded=False):
+            st.info("No analysis steps performed yet")
 
 
 def setup_upload_location():
@@ -34,14 +35,11 @@ def setup_upload_location():
         progress_bar.progress(60)
 
         col1, col2, col3 = st.columns(3)
-
         fm = None
         group = None
         experiment = None
-
         with col1:
             fm = furthr.setup_project()
-
         if fm:
             with col2:
                 group = furthr.select_group()
@@ -49,17 +47,13 @@ def setup_upload_location():
             if group:
                 with col3:
                     experiment = furthr.select_experiment(group)
-
         status_text.text('Ready for data selection')
         progress_bar.progress(100)
         import time
         time.sleep(0.1)
-
         progress_bar.empty()
         status_text.empty()
-
         return fm, group, experiment, furthr
-
     except Exception as e:
         st.error(f"Error setting up upload location: {str(e)}")
         return None, None, None, None
@@ -82,7 +76,6 @@ def prepare_dataframe(df):
             return col_str
 
         df.columns = [format_header(col) for col in df.columns]
-
     numeric_cols = df.select_dtypes(include=['float64', 'float32']).columns
     for col in numeric_cols:
         df[col] = df[col].apply(lambda x: str(x).replace('.', ',') if pd.notnull(x) else x)
@@ -98,53 +91,39 @@ def get_upload_data(widget_key_prefix=""):
          "Specific Analysis Steps"],
         key=f"{widget_key_prefix}_upload_data_selection"
     )
-
-    if upload_choice == "Original Data":
-        data_to_upload = st.session_state.original_df.copy()
-        analysis_types = ["original"]
-    elif upload_choice == "Specific Analysis Steps":
-        if st.session_state.analysis_history:
-            selected_steps = st.multiselect(
-                "Select analysis steps to include:",
-                st.session_state.analysis_history,
-                default=st.session_state.analysis_history,
-                key=f"{widget_key_prefix}_analysis_steps_selection"
-            )
-            data_to_upload = st.session_state.df.copy()
-            analysis_types = []
-            for step in selected_steps:
-                if "Detrending applied to" in step:
-                    analysis_types.append("detrend")
-                elif "Smoothing applied to" in step:
-                    analysis_types.append("smoothed")
-            analysis_types = list(set(analysis_types))
-        else:
-            st.warning("No analysis steps available to select.")
-            analysis_types = []
-            data_to_upload = st.session_state.df.copy()
-    else:
+    # TODO: the other 2 options
+    if st.session_state.analysis_history:
         data_to_upload = st.session_state.df.copy()
         analysis_types = []
-        for step in st.session_state.analysis_history:
-            if "Detrending applied to" in step:
-                analysis_types.append("detrend")
-            elif "Smoothing applied to" in step:
-                analysis_types.append("smoothed")
-        analysis_types = list(set(analysis_types))
+        if hasattr(st.session_state, 'detrend_steps') and st.session_state.detrend_steps:
+            analysis_types.append("detrend")
+        if hasattr(st.session_state, 'smoothing_steps') and st.session_state.smoothing_steps:
+            analysis_types.append("smooth")
+    else:
+        st.warning("No analysis steps available to select.")
+        analysis_types = []
+        data_to_upload = st.session_state.df.copy()
 
     return data_to_upload, analysis_types
 
-
 def generate_filename(analysis_types, widget_key_prefix=""):
-    """Generate filename in format xxxx_detrend_smoothed_timestamp.csv"""
+    """Generate filename based on analysis types"""
     original_filename = st.session_state.get('original_filename', "TS_PL_107")
-    base_name = original_filename.split('_')[0:3]
-    base_name = '_'.join(base_name)
-    analysis_suffix = "_" + "_".join(analysis_types) if analysis_types else ""
+    base_filename = original_filename.rsplit('.', 1)[0]
+    # get file name
+    if not analysis_types:
+        suffix = "original"
+    elif set(analysis_types) == {"detrend", "smooth"}:
+        suffix = "analysed"
+    elif "detrend" in analysis_types and "smooth" not in analysis_types:
+        suffix = "detrended"
+    elif "smooth" in analysis_types and "detrend" not in analysis_types:
+        suffix = "smoothed"
+    else:
+        suffix = "_".join(analysis_types)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    generated_filename = f"{base_name}{analysis_suffix}_{timestamp}.csv"
-    st.text(f"Generated filename: {generated_filename}")
-
+    generated_filename = f"{base_filename}_{suffix}_{timestamp}.csv"
+    st.text(f"Upload filename: {generated_filename}")
     return generated_filename
 
 
