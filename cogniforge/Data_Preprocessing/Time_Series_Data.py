@@ -1,6 +1,3 @@
-import sys
-import os
-import tempfile
 import streamlit as st
 from datetime import datetime
 from furthrmind import Furthrmind as API
@@ -30,12 +27,15 @@ if 'data_info' not in st.session_state:
         'use_full_dataset': True,
         'total_rows': 0
     }
+if 'current_analysis_type' not in st.session_state:
+    st.session_state.current_analysis_type = None
 
 
 def handle_revert():
     """Handle revert to original dataset"""
     st.session_state.df = st.session_state.original_df.copy()
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    st.session_state.current_analysis_type = None
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
     revert_message = f"Data reverted to original state ({timestamp})"
     st.session_state.analysis_history.append(revert_message)
     if st.session_state.ts_subpage == "Detrend Data":
@@ -44,7 +44,6 @@ def handle_revert():
     elif st.session_state.ts_subpage == "Smooth Data":
         st.session_state.smoothing_steps = []
         st.session_state.smoothing_active = False
-
 
 
 with st.sidebar:
@@ -100,7 +99,7 @@ if st.session_state.ts_subpage == "Load Data":
                 keys_to_clear = [
                     'df', 'original_df', 'detrending_active', 'smoothing_active',
                     'analysis_history', 'original_filename', 'current_dataset_name',
-                    'detrend_steps', 'smoothing_steps',
+                    'detrend_steps', 'smoothing_steps', 'current_analysis_type'
                 ]
                 for key in keys_to_clear:
                     if key in st.session_state:
@@ -111,7 +110,6 @@ if st.session_state.ts_subpage == "Load Data":
     try:
         from utils.dataloader import DataLoader
         from utils.furthr import FURTHRmind
-
         data = None
         with st.expander("Step 1: Download Data", expanded=True):
             with st.spinner('Downloading data...'):
@@ -167,14 +165,11 @@ elif st.session_state.ts_subpage == "Detrend Data":
     if st.session_state.df is not None:
         st.session_state.data_info['total_rows'] = len(st.session_state.df)
         try:
-            if st.session_state.analysis_history:
-                st.write("### Current Analysis State")
-                for step in st.session_state.analysis_history:
-                    st.write(f"- {step}")
             detrended_df = analyze_detrend(st.session_state.df)
             if detrended_df is not None:
                 st.session_state.df = detrended_df
                 if st.session_state.detrend_steps:
+                    st.session_state.current_analysis_type = "detrend" #set analysis type
                     st.write("### Detrending Summary")
                     st.write(f"Total columns detrended: {len(st.session_state.detrend_steps)}")
                     # Option to revert
@@ -190,25 +185,19 @@ elif st.session_state.ts_subpage == "Detrend Data":
         st.warning("Please load and process data first in the Load Data section.")
 
 
-
-
 elif st.session_state.ts_subpage == "Smooth Data":
     from utils.smoothing import analyze_smooth
     st.title("📉 Smooth Data")
     if st.session_state.df is not None:
         st.session_state.data_info['total_rows'] = len(st.session_state.df)
         try:
-            if st.session_state.analysis_history:
-                st.write("### Current Analysis State")
-                for step in st.session_state.analysis_history:
-                    st.write(f"- {step}")
-
             # smoothing analysis
             smoothed_df = analyze_smooth(st.session_state.df)
             if smoothed_df is not None:
                 st.session_state.df = smoothed_df
                 # Option to revert
                 if st.session_state.smoothing_steps:
+                    st.session_state.current_analysis_type = "smooth"
                     if st.button("Revert to Original Data"):
                         handle_revert()
                         st.success("Successfully reverted to original data")
