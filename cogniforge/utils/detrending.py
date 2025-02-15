@@ -41,7 +41,7 @@ def record_detrend_step(column: str, method: str, params: dict):
     st.session_state.detrend_steps.append(step)
 
     # Create history message with timestamp
-    history_message = f"[{timestamp.strftime('%Y-%m-%d %H:%M')}] {method} detrending applied to {column}"
+    history_message = f"[{timestamp.strftime('%Y-%m-%d %H:%M')}] {method} detrending applied to {column}, method = {method}"
     if not any(history_message in existing_message for existing_message in st.session_state.analysis_history):
         st.session_state.analysis_history.append(history_message)
 
@@ -106,7 +106,7 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
     if detrend_method == "Polynomial":
         params['degree'] = st.slider("Polynomial degree", 2, 10, 2)
     elif detrend_method == "Moving Average":
-        params['window'] = st.slider("Window size", 3, 101, 7, 2)
+        params['window'] = st.slider("Window size", 3, 101, 7, 2)  # suggestions only
 
     timestamps = np.arange(len(df))
     needs_detrending = {}
@@ -148,7 +148,6 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
 
                 st.success(f"✅ Detrending applied to {chosen_column}")
                 st.session_state.current_df = df.copy()
-
     st.write("### Dataset Preview")
     preview_df = df.head(15)
     display_df = preview_df.copy()

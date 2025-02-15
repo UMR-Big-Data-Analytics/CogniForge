@@ -123,11 +123,10 @@ def record_smoothing_step(column: str, alpha: float, stats: dict):
         'timestamp': timestamp,
         'column': column,
         'alpha': alpha,
-        'noise_reduction': stats['noise_reduction'],
         'result_column': f"{column}_smoothed"
     }
     st.session_state.smoothing_steps.append(step)
-    history_message = f"[{timestamp.strftime('%Y-%m-%d %H:%M')}] Smoothing applied to {column} (α={alpha:.2f}, noise reduction={stats['noise_reduction']:.1f}%)"
+    history_message = f"[{timestamp.strftime('%Y-%m-%d %H:%M')}] Smoothing applied to {column} (α={alpha:.2f})"
     if not any(history_message in existing_message for existing_message in st.session_state.analysis_history):
         st.session_state.analysis_history.append(history_message)
 
@@ -235,13 +234,9 @@ def analyze_smooth(df: pd.DataFrame = None) -> pd.DataFrame:
                         st.success(f"✅ Smoothing applied to {chosen_column}")
                 else:
                     st.success("✓ No significant noise detected - No smoothing applied")
-
-
         # Show final status
         if processed_columns:
-            st.success(f"✅ Total columns smoothed: {len(processed_columns)}")
             st.session_state.current_df = df.copy()
-
         # Preview of dataframe
         st.write("### Dataset Preview")
         preview_df = df.head(15)
