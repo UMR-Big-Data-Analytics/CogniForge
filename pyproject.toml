@@ -7,12 +7,14 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.12"
-streamlit = "^1.32.0"
+streamlit = "^1.34.0"
 requests = "^2.31.0"
 python-dotenv = "^1.0.1"
 lttb = "^0.3.1"
 scikit-learn = "~1.2.0"
 furthrmind = "0.1.13"
+
+plotly = "^5.24.1"
 tensorflow = "~2.16"
 tensorflow-io-gcs-filesystem = "0.31.0"
 autotsad = { git = "https://github.com/UMR-Big-Data-Analytics/AutoTSAD.git", branch = "autotsad-cogniforge" }
