@@ -165,7 +165,5 @@ data/
 tmp/
 *.csv
 results-autotsad/
-
-#file
 poetry.lock
 
