@@ -1,10 +1,14 @@
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 from sklearn.cluster import KMeans
-
+from autotsad.system.main import main as run_autotsad
+from autotsad.system.main import register_autotsad_arguments
+import argparse
+import os,shutil
 
 class AnomalyDetector(ABC):
     @abstractmethod
@@ -29,7 +33,7 @@ class KMeansAnomalyDetector(AnomalyDetector):
         self.n_clusters = n_clusters
         self.window_size = window_size
 
-    def name(self):
+    def name(self): 
         return "KMeans"
 
     def parameters(self):
@@ -41,7 +45,7 @@ class KMeansAnomalyDetector(AnomalyDetector):
             data, self.window_size, axis=0
         )
         windows = windows.reshape(-1, self.window_size * data.shape[1])
-        km = KMeans(n_clusters=self.n_clusters)
+        km = KMeans(n_clusters=self.n_clusters,n_init='auto')
         labels = km.fit_predict(windows)
         anomaly_score = np.linalg.norm(windows - km.cluster_centers_[labels], axis=1)
         anomaly_score = (anomaly_score - anomaly_score.min()) / (
@@ -56,7 +60,40 @@ class KMeansAnomalyDetector(AnomalyDetector):
             "n_clusters": self.n_clusters,
         }
 
+class AutoTSADAnomalyDetector(AnomalyDetector):
+    def __init__(self):
+        super().__init__()
+        self._name = "AutoTSAD"
+        self._use_gt_for_cleaning = False
 
+    def name(self) -> str:
+        return self._name
+
+    def parameters(self):
+        #check with team, what config can be updated from front end
+        pass
+
+    def detect(self, csv_path: str) -> np.ndarray:
+        config_path = Path("autotsad.yaml")
+        if not config_path.exists():
+            raise FileNotFoundError(f"Configuration file not found: {config_path}")
+        if not Path(csv_path).exists():
+            raise FileNotFoundError(f"Dataset file not found: {csv_path}")
+        # Call the autotsad function
+        parser = argparse.ArgumentParser()
+        register_autotsad_arguments(parser)
+        args = parser.parse_args(["--config-path", str(config_path), str(csv_path)])
+
+        # Execute the autotsad run command
+        anomaly_score = run_autotsad(args)
+        if(os.path.isfile(csv_path)):
+            os.remove(csv_path)
+        # if(os.path.isdir("results-autotsad")):
+        #     shutil.rmtree("results-autotsad")
+        
+        return anomaly_score
+    
+    
 class SpuckerCounter:
     def __init__(
         self,
@@ -99,6 +136,33 @@ class SpuckerCounter:
             count -= 1
 
         return count
+
+from sklearn.ensemble import IsolationForest
+
+class IsolationForestAnomalyDetector(AnomalyDetector):
+    def __init__(self, contamination: float = 0.05) -> None:
+        super().__init__()
+        self.contamination = contamination
+
+    def name(self):
+        return "Isolation Forest"
+
+    def parameters(self):
+        self.contamination = st.slider(
+            "Contamination (Anomaly Ratio)", 0.01, 0.5, self.contamination, step=0.01
+        )
+
+    def detect(self, data: np.ndarray) -> np.ndarray:
+        iso_forest = IsolationForest(contamination=self.contamination, random_state=42)
+        iso_forest.fit(data)
+
+        # Compute anomaly score (higher = more anomalous)
+        scores = -iso_forest.decision_function(data)  # Negative score means anomaly
+
+        # Normalize scores between 0 and 1
+        scores = (scores - scores.min()) / (scores.max() - scores.min())
+
+        return scores
 
 
 if __name__ == "__main__":

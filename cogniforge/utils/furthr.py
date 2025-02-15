@@ -3,6 +3,7 @@ import tempfile
 from dataclasses import dataclass, field
 from enum import Enum
 from io import BytesIO, StringIO
+import time
 
 import pandas as pd
 import requests
@@ -11,10 +12,9 @@ from dotenv import load_dotenv
 from furthrmind import Furthrmind as API
 from furthrmind.collection import Experiment, File, Group, Project, ResearchItem, Sample
 from furthrmind.file_loader import FileLoader
-from datetime import datetime
+
 from .object_select_box import selectbox
 from .state_button import button
-import time
 
 load_dotenv()
 
@@ -94,6 +94,7 @@ def _read_csv_wire(csv: StringIO) -> pd.DataFrame:
 
 class Process(Enum):
     """Enum for the process type."""
+
     SPRAYING = "Spraying"
     WIRE = "Wire"
 
@@ -101,6 +102,7 @@ class Process(Enum):
 @dataclass
 class FURTHRmind:
     """FURTHRmind API interface."""
+
     id: str = "furtherwidget"
     api_key: str | None = os.getenv("FURTHRMIND_API_KEY")
     host: str = "https://furthr.informatik.uni-marburg.de/"
@@ -118,14 +120,20 @@ class FURTHRmind:
         """Return the URL for the FURTHRmind API."""
         return self.host + "api2/{endpoint}"
 
-
     def get(self, endpoint: str) -> dict:
+        """Get data from the FURTHRmind database."""
         url = self.url.format(endpoint=endpoint)
         return api_get(url, dict(self.session.headers))
 
     def download_string_file(self, file: File) -> StringIO | None:
         """Download a file from the FURTHRmind database."""
+        placeholder = st.empty()
+        placeholder.info("⏳ Fetching data... Please wait!")
         csv = api_get_string(f"{self.host}files/{file.id}", dict(self.session.headers))
+        st.session_state.clicked["loaddownload"] = False
+        placeholder.success("✅ Data loaded successfully!")
+        time.sleep(1)
+        placeholder.empty() 
         if isinstance(csv, StringIO):
             return csv
         st.error(f"Failed to download file {file.name}: {csv.reason}")
@@ -157,6 +165,7 @@ class FURTHRmind:
         return fm
 
     def select_group(self) -> Group | None:
+        """Select a group from the project."""
         groups = Group.get_all()
         group = selectbox(groups, label="Choose a group", key=f"{self.id}_group")
         return group
@@ -164,6 +173,7 @@ class FURTHRmind:
     def select_experiment(
         self, group: Group
     ) -> Experiment | Sample | ResearchItem | None:
+        """Select an experiment or sample from the group."""
         exp_sam = group.experiments + group.samples
         for l in list(group.researchitems.values()):
             exp_sam += l
@@ -179,20 +189,13 @@ class FURTHRmind:
         return chosen_data
 
     def select_file(self, chosen_data: Experiment | Sample) -> File | None:
-        files = chosen_data.files
-        files_we_want = []
-        for file in files:
-            if file.name.endswith(self.file_type):
-                files_we_want.append(file)
-        if len(files_we_want) == 0:
-            st.error(f"Sorry! We couldn't find any {self.file_type} files here.")
-            return None
-        chosen_file = selectbox(
-            files_we_want,
-            label=f"Pick a {self.file_type} file",
-            key=f"{self.id}_file"
+        """Select a file from the experiment or sample."""
+        files: list[File] = chosen_data.files
+        files = [f for f in files if f.name.endswith(self.file_type)]
+        file = selectbox(
+            files, label=f"Choose a {self.file_type} file", key=f"{self.id}_file"
         )
-        return chosen_file
+        return file
 
     def download_bytes(self) -> tuple[BytesIO, str] | None:
         """Download any file from the FURTHRmind database."""
@@ -222,6 +225,8 @@ class FURTHRmind:
                 if file is not None:
                     if button("Load", "load" + self.id, stateful=True):
                         df = self.download_string_file(file)
+                        st.session_state.data = df
+                        st.session_state.fileName = file.name
                         return df, file.name
         return None, None
 
@@ -232,7 +237,7 @@ class FURTHRmind:
         if group is not None:
             experiment = self.select_experiment(group)
             if experiment is not None:
-                if st.button("Upload", "upload_anomaly_score"):
+                if button("Upload", "upload_anomaly_score",True):
                     with tempfile.TemporaryDirectory() as tmpdirname:
                         csv_path = os.path.join(tmpdirname, f"{name}.csv")
                         csv.to_csv(csv_path)
@@ -245,6 +250,8 @@ class FURTHRmind:
                                 "id": experiment.id,
                             },
                         )
+                        st.success("Anomaly Score Uploaded Successfully!")
+                        st.session_state.clicked["upload_anomaly_score"] = False
             else:
                 st.error("No experiment or sample found")
         else:

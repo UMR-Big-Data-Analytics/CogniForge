@@ -183,8 +183,10 @@ class DataLoader:
 
         number_cols = page_df.select_dtypes(['float64', 'float32']).columns
         for col in number_cols:
-            page_df[col] = page_df[col].map(
-                lambda x: f'{float(x):.6f}'.replace(',', '.') if isinstance(x, (float, int)) and pd.notnull(x) else x)
+            page_df[col] = page_df[col].apply(
+                lambda x: f'{float(x):.6f}'.replace(',', '.') if pd.notna(x) else x
+            )
+
         st.dataframe(page_df, use_container_width=True, height=350)
 
     def _check_for_existing_analysis(self):
@@ -238,7 +240,6 @@ class DataLoader:
             st.error(f"Data processing error: {str(e)}")
             return False
 
-
     def get_dataframe(self) -> pd.DataFrame:
         try:
             filename = getattr(self.csv, 'name', 'Unknown Dataset')
@@ -259,7 +260,6 @@ class DataLoader:
             st.write(f"Dataset: {filename}")
             total_rows = st.session_state.total_rows
             st.write(f"Total rows in dataset: {total_rows:,}")
-
 
             use_full_dataset = st.checkbox(
                 "Use entire dataset",
@@ -342,6 +342,67 @@ class DataLoader:
                 self._display_large_dataframe(st.session_state.current_df, page_size=1000)
 
             return None
+
+        except Exception as e:
+            st.error(f"Data loading error: {str(e)}")
+            return None
+    
+    def get_processedDataFrame(self) -> pd.DataFrame:
+        try:
+            st.info(f"New dataset detected: {st.session_state.fileName}")
+
+            # Ensure total rows are updated
+            st.session_state.total_rows = self._get_total_rows()
+            self.reset_state()
+            if "use_full_dataset" not in st.session_state:
+                st.session_state.use_full_dataset = False
+            # Checkbox to show entire dataset or only the first 10 rows
+            use_full_dataset = st.checkbox(
+                "Show entire dataset",
+                value=st.session_state.use_full_dataset,
+                help="Check to see the complete dataset. Uncheck to preview only first 10 rows.",
+                key="dataset_mode"
+            )
+
+            # If user toggles the checkbox, update session state
+            if use_full_dataset != st.session_state.use_full_dataset:
+                st.session_state.use_full_dataset = use_full_dataset
+                st.rerun() 
+
+            # Load the dataset
+            self.csv.seek(0)
+            df = pd.read_csv(
+                self.csv,
+                sep=self.delimiter,
+                decimal=",",
+                header=0,
+                encoding="latin1",
+                low_memory=False,
+                skip_blank_lines=True,
+                index_col=0
+            )
+            previewDf = df
+            if previewDf.index.name is not None:
+                previewDf.reset_index(inplace=True)
+            # If full dataset is not selected, show only first 10 rows
+            if not use_full_dataset:
+                previewDf = df.head(10)
+
+            # Store the dataframe in session state
+            st.session_state.current_df = df.copy()
+            dataset_info = (
+                f"Showing complete dataset ({len(df):,} rows)"
+                if use_full_dataset
+                else f"Previewing first 10 rows of the dataset"
+            )
+            st.write(dataset_info)
+
+            # Paginate and display the dataset (only if full dataset is selected)
+            if use_full_dataset:
+                self._display_large_dataframe(previewDf, page_size=1000)
+            else:
+                st.dataframe(previewDf, use_container_width=True, height=350)
+            return df
 
         except Exception as e:
             st.error(f"Data loading error: {str(e)}")

@@ -160,3 +160,12 @@ cython_debug/
 #.idea/
 
 data/
+
+#autotsad
+tmp/
+*.csv
+results-autotsad/
+
+#file
+poetry.lock
+
