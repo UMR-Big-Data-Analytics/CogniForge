@@ -117,7 +117,7 @@ class DataLoader:
         # Adjust columns
         if isinstance(header, list):
             preview_df.columns = [f"{col[0]}[{col[1]}]" if pd.notna(col[1]) else col[0] for col in preview_df.columns]
-        preview_df = preview_df.applymap(
+        preview_df = preview_df.map(
             lambda x: f'{float(x):.6f}'.replace(',', '.') if isinstance(x, (float, int)) and pd.notnull(x) else x)
         preview_df.index = range(1, len(preview_df) + 1)
         st.dataframe(preview_df, use_container_width=True, height=350)
