@@ -2,11 +2,11 @@ general:
   #tmp_path:
   #result_path:
   #cache_key:
-  logging_level: 0
-  use_timer: no
-  timer_logging_level: 0
+  #logging_level:
+  #use_timer:
+  #timer_logging_level: 
   progress: no
-  n_jobs: 20
+  n_jobs: 4
   #seed:
   #max_algorithm_instances:
   #algorithm_selection_method:
@@ -57,7 +57,7 @@ optimization:
   optuna_storage_type: "sqlite"
   optuna_storage_cleanup: yes
   #optuna_dashboard:
-  optuna_logging_level: 0
+  #optuna_logging_level: 
   #n_trials_startup:
   #n_trials_sensitivity:
   #n_trials_step:

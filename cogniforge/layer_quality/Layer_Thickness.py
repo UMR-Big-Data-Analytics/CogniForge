@@ -1,4 +1,6 @@
 import datetime as dt
+import os
+import shutil
 import time
 import sys
 
@@ -18,15 +20,18 @@ from cogniforge.algorithms.anomaly_detection import (
 from cogniforge.utils.dataloader import DataLoader
 from cogniforge.utils.furthr import FURTHRmind
 from cogniforge.utils.object_select_box import selectbox
-from cogniforge.utils.plotting import plot_sampled
+from cogniforge.utils.plotting import plot_sampled, plot_xy_chart
 from cogniforge.utils.state_button import button
 
 def save_univariate_time_series(df: pd.DataFrame, selected_column: str, output_path: str):
     if df.index.name is not None:
         df.reset_index(inplace=True)
-
+    zeit_column = next(
+    (col for col in df.columns if col.lower().startswith(("Zeit", "Time"))), 
+    df.columns[0]  # Default to the first column if no match is found
+    )
     univariate_df = pd.DataFrame({
-        "timestamp": range(len(df)),  # Generate sequential timestamps
+        "timestamp": df[zeit_column],  # Generate sequential timestamps
         f"value-0": df[selected_column]
     })
 
@@ -34,13 +39,23 @@ def save_univariate_time_series(df: pd.DataFrame, selected_column: str, output_p
     univariate_df.to_csv(output_path, index=False, header=True)
 
 def plot_anomaly_detection(anomaly_score: np.ndarray) -> np.ndarray:
-    anomaly_score_downsampled = lttb.downsample(
-        np.c_[
-            df.index.values.astype(np.float32)[: len(anomaly_score)],
-            anomaly_score,
-        ],
-        100,
+    zeit_column = next(
+    (col for col in df.columns if col.lower().startswith(("Zeit", "Time"))), 
+    df.columns[0]  # Default to the first column if no match is found
     )
+
+    # Extract the Zeit column values
+    zeit_values = df[zeit_column].values.astype(np.float32)[: len(anomaly_score)]
+    if len(anomaly_score) > 1000:
+        anomaly_score_downsampled = lttb.downsample(
+            np.c_[
+                zeit_values,
+                anomaly_score,
+            ],
+            1000,
+        )
+    else: 
+        anomaly_score_downsampled = np.c_[zeit_values, anomaly_score]
     df_plot = pd.DataFrame(
         {
             "Zeit": anomaly_score_downsampled[:, 0],
@@ -90,8 +105,9 @@ if st.session_state.data is not None:
         df = dl.get_processedDataFrame()
 
     if st.session_state.data is not None and df is not None:
+        filtered_columns = [col for col in df.columns if not col.lower().startswith(("zeit", "time"))]
         with tabs[1]:
-                 plot_sampled(df)
+                 plot_xy_chart(df)
 
         with tabs[2]:
             # Allow column selection dynamically
@@ -114,7 +130,7 @@ if st.session_state.data is not None:
                     st.session_state.anomaly_algorithm = None
 
                 if isinstance(algorithm, AutoTSADAnomalyDetector):
-                    column_name = st.selectbox("Select a column for AutoTSAD", df.columns)
+                    column_name = st.selectbox("Select a column for AutoTSAD", filtered_columns)
 
                     if column_name:
                         st.write(f"Selected column: {column_name}")
@@ -127,10 +143,12 @@ if st.session_state.data is not None:
                             st.session_state.clicked["run_autotsad"] = False  
                             st.session_state.anomaly_algorithm = algorithm.name()
                             st.session_state.anomalyNameChanged = False
+                            if(os.path.isdir("results-autotsad")):
+                                shutil.rmtree("results-autotsad")
                 else:
                     # For other detectors: Allow multiselect for multiple columns
                     column_names = st.multiselect(
-                        "Choose columns", list(df.columns), default=list(df.columns)
+                        "Choose columns", list(filtered_columns), default=list(filtered_columns)
                     )
                     if button(f"Run {algorithm.name()}", "run_algorithm", True):
                         anomaly_score = algorithm.detect(df[column_names].values)
@@ -141,10 +159,8 @@ if st.session_state.data is not None:
 
 if st.session_state.anomaly_score is not None and st.session_state.anomaly_algorithm is not None and not st.session_state.anomalyNameChanged:
     plot_anomaly_detection(st.session_state.anomaly_score)
-    upload_tab = st.tabs(["Upload Score"])[0]
-    with upload_tab:
-            st.write("## Uploading Anomaly Score...")
+    with st.expander("Upload Anomaly Score",expanded=True):
             FURTHRmind("upload").upload_csv(
-                pd.DataFrame({"score": st.session_state.anomaly_score}),
+                pd.DataFrame({"score": st.session_state.anomaly_score, "is_anomaly": st.session_state.anomaly_score > 0.6}),
                 f"{st.session_state.fileName}-anomaly_score-{st.session_state.anomaly_algorithm}-{dt.datetime.now().strftime('%Y-%m-%dT%H-%M-%S')}",
             )
