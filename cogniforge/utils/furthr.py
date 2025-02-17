@@ -234,10 +234,12 @@ class FURTHRmind:
         """Upload a CSV file to the FURTHRmind database."""
         fm = self.setup_project()
         group = self.select_group()
+        progress_placeholder = st.empty()
         if group is not None:
             experiment = self.select_experiment(group)
             if experiment is not None:
                 if button("Upload", "upload_anomaly_score",True):
+                    progress_placeholder.progress(0.6)
                     with tempfile.TemporaryDirectory() as tmpdirname:
                         csv_path = os.path.join(tmpdirname, f"{name}.csv")
                         csv.to_csv(csv_path)
@@ -250,6 +252,7 @@ class FURTHRmind:
                                 "id": experiment.id,
                             },
                         )
+                        progress_placeholder.progress(1.0)
                         st.success("Anomaly Score Uploaded Successfully!")
                         st.session_state.clicked["upload_anomaly_score"] = False
             else:

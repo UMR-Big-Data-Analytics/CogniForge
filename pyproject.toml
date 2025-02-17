@@ -15,6 +15,8 @@ scikit-learn = "~1.2.0"
 furthrmind = "0.1.13"
 
 plotly = "^5.24.1"
+tensorflow = "~2.16"
+tensorflow-io-gcs-filesystem = "0.31.0"
 autotsad = { git = "https://github.com/UMR-Big-Data-Analytics/AutoTSAD.git", branch = "autotsad-cogniforge" }
 [build-system]
 requires = ["poetry-core"]
