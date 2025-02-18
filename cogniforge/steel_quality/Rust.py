@@ -121,7 +121,7 @@ with tab_model:
             'Image Height': images_height,
             'Model Architecture': "ANY",
             'Image Grayscaling': "ANY",
-            'Data Preprocessing': "ANY",
+            'Pretrained Weights': "ANY",
             'Optimizer': "ANY",
             'Activation Function': "ANY",
             'Loss Function': "ANY"
@@ -134,7 +134,7 @@ with tab_model:
                     model_name = single_field.value
                 elif single_field.field_name == 'Image Grayscaling':
                     grayscale = bool(single_field.value)
-                elif single_field.field_name == 'Data Preprocessing':
+                elif single_field.field_name == 'Pretrained Weights':
                     pretrained = bool(single_field.value)
                 elif single_field.field_name == 'Optimizer':
                     optimizer = single_field.value
@@ -148,7 +148,7 @@ with tab_model:
                 'Model Architecture': model_name,
                 'Expected Resolution': f"{images_width}x{images_height} px",
                 'Image Grayscaling': str(grayscale),
-                'Data Preprocessing': str(pretrained),
+                'Pretrained Weights': str(pretrained),
                 'Optimizer': optimizer,
                 'Activation Function': activation,
                 'Loss Function': loss
