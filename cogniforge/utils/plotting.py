@@ -2,7 +2,7 @@ import lttb
 import numpy as np
 import pandas as pd
 import streamlit as st
-
+import plotly.express as px
 
 def plot_sampled(df: pd.DataFrame, sampling_size: int = 1000) -> None:
     columns = df.columns
@@ -40,3 +40,42 @@ def plot_sampled(df: pd.DataFrame, sampling_size: int = 1000) -> None:
     if normalize:
         df_plot = (df_plot - df_plot.min()) / (df_plot.max() - df_plot.min())
     st.line_chart(df_plot)
+
+def plot_xy_chart(df: pd.DataFrame, sampling_size: int = 1000) -> None:
+    columns = df.columns
+
+    x_axis = st.selectbox("Select X-axis", columns, index=0)
+    y_axis_options = [col for col in columns if col != x_axis]
+    y_axis = st.multiselect("Select Y-axis", y_axis_options, default=[y_axis_options[0]] if y_axis_options else [])
+
+    if not y_axis:
+        st.error("Please select at least one column for Y-axis.")
+        return
+
+    df_filtered = df[[x_axis] + y_axis].dropna()
+    df_filtered[x_axis] = pd.to_numeric(df_filtered[x_axis], errors="coerce")
+    df_filtered = df_filtered.sort_values(by=x_axis).drop_duplicates(subset=[x_axis])
+
+    # Downsample only if necessary
+    if len(df_filtered) > sampling_size:
+        sampled_data = {}
+        for col in y_axis:
+            col_with_x = np.c_[df_filtered[x_axis].values, df_filtered[col].values]
+            sampled = lttb.downsample(col_with_x, sampling_size)
+            sampled_data[col] = sampled[:, 1]
+        sampled_data[x_axis] = sampled[:, 0]
+        df_plot = pd.DataFrame(sampled_data)
+    else:
+        df_plot = df_filtered  # Use full dataset if no downsampling is needed
+
+    fig = px.line(df_plot, x=x_axis, y=y_axis, title="")
+    fig.update_layout(
+        legend=dict(
+            orientation="v",  # vertical layout
+            yanchor="bottom",
+            y=-1,  # Adjust position
+            xanchor="center",
+            x=0.5,
+        )
+    )
+    st.plotly_chart(fig, use_container_width=True)
