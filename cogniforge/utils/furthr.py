@@ -223,12 +223,12 @@ class FURTHRmind:
 
     def download_bytes_button(self) -> tuple[BytesIO, str] | None:
         """Download the selected item as bytes from the FURTHRmind database."""
-        if self.__selected and button("Load", "load" + self.id, stateful=True):
+        if self.__selected and button("Load", "load" + self.__id, stateful=True):
             return download_item_bytes(self.__selected, self.file_extension)
     
     def download_string_button(self) -> tuple[BytesIO, str] | None:
         """Download the selected item as string from the FURTHRmind database."""
-        if self.__selected and button("Load", "load" + self.id, stateful=True):
+        if self.__selected and button("Load", "load" + self.__id, stateful=True):
             return download_item_string(self.__selected, self.file_extension)
     
     def upload_file(self, path_or_writer: str | Callable[[str], tuple[Any, str]]) -> None:
@@ -268,6 +268,6 @@ class FURTHRmind:
     def upload_csv(self, csv: pd.DataFrame, name: str) -> None:
         """Upload a CSV file to the FURTHRmind database."""
         self.upload_file(lambda tmp_path: (
-            csv.to_csv(tmp_path),
+            csv.to_csv(tmp_path, index=False),
             name + ".csv"
         ))
