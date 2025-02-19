@@ -12,6 +12,7 @@ def load_model(model_file):
 
     with tempfile.NamedTemporaryFile(suffix=".keras") as fh:
         fh.write(model_bytes.getvalue())
+        fh.flush()
         model = tf.keras.models.load_model(fh.name)
     return model
 
