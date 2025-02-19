@@ -29,34 +29,22 @@ def setup_upload_location():
         progress_bar.progress(20)
         from utils.furthr import FURTHRmind
         furthr = FURTHRmind(id="upload_widget")
+        furthr.container_category = "experiment"
         st.write("### Select Upload Location")
 
         status_text.text('Loading project settings...')
         progress_bar.progress(60)
-
-        col1, col2, col3 = st.columns(3)
-        fm = None
-        group = None
-        experiment = None
-        with col1:
-            fm = furthr.setup_project()
-        if fm:
-            with col2:
-                group = furthr.select_group()
-
-            if group:
-                with col3:
-                    experiment = furthr.select_experiment(group)
+        furthr.select_container()
         status_text.text('Ready for data selection')
         progress_bar.progress(100)
         import time
         time.sleep(0.1)
         progress_bar.empty()
         status_text.empty()
-        return fm, group, experiment, furthr
+        return furthr.fm, furthr.selected
     except Exception as e:
         st.error(f"Error setting up upload location: {str(e)}")
-        return None, None, None, None
+        return None, None
 
 
 def prepare_dataframe(df):
@@ -82,15 +70,15 @@ def prepare_dataframe(df):
     return df
 
 
-def get_upload_data(widget_key_prefix=""):
+def get_upload_data():
     """Get data to upload based on user selection"""
-    upload_choice = st.radio(
-        "Choose data to upload:",
-        ["Current State (with all analyses)",
-         "Original Data",
-         "Specific Analysis Steps"],
-        key=f"{widget_key_prefix}_upload_data_selection"
-    )
+    # FIXME upload_choice unused
+    # upload_choice = st.radio(
+    #     "Choose data to upload:",
+    #     ["Current State (with all analyses)",
+    #      "Original Data",
+    #     "Specific Analysis Steps"]
+    # )
     # TODO: the other 2 options
     if st.session_state.analysis_history:
         data_to_upload = st.session_state.df.copy()
@@ -106,7 +94,7 @@ def get_upload_data(widget_key_prefix=""):
 
     return data_to_upload, analysis_types
 
-def generate_filename(analysis_types, widget_key_prefix=""):
+def generate_filename(analysis_types):
     """Generate filename based on analysis types"""
     original_filename = st.session_state.get('original_filename', "TS_PL_107")
     base_filename = original_filename.rsplit('.', 1)[0]
@@ -127,43 +115,10 @@ def generate_filename(analysis_types, widget_key_prefix=""):
     return generated_filename
 
 
-def upload_data():
-    """Wrapper function for upload process"""
-    try:
-        import time
-        widget_key_prefix = f"upload_{int(time.time())}"
-
-        data_to_upload, analysis_types = get_upload_data(widget_key_prefix)
-        if data_to_upload is None or data_to_upload.empty:
-            st.error("No data available for upload. Please check your data source.")
-            return False
-        filename = generate_filename(analysis_types, widget_key_prefix)
-        with st.spinner("Preparing and uploading data..."):
-            upload_success, message = upload_analyzed_data(
-                analyzed_df=data_to_upload,
-                analysis_name=filename,
-                analysis_history=st.session_state.get('analysis_history', []),
-                original_filename=st.session_state.get('original_filename')
-            )
-        if upload_success:
-            st.success(message)
-            return True
-        else:
-            st.error(message)
-            return False
-
-    except Exception as e:
-        st.error(f"An unexpected error occurred during upload: {str(e)}")
-        st.exception(e)
-        return False
-
 def upload_analyzed_data(
         analyzed_df: pd.DataFrame,
         analysis_name: str = "analyzed_data",
-        analysis_history: list = None,
-        original_filename: str = None,
         fm: API = None,
-        group: Group = None,
         experiment: Experiment = None
 ) -> tuple[bool, str]:
     """Upload analyzed data to FURTHRmind without repeating folder selection."""
@@ -178,7 +133,7 @@ def upload_analyzed_data(
             raise ValueError("Input must be a pandas DataFrame")
         if len(analyzed_df.columns) == 0:
             raise ValueError("DataFrame contains no columns")
-        if not all([fm, group, experiment]):
+        if not all([fm, experiment]):
             raise ValueError("Upload location information is missing")
 
         new_filename = analysis_name
