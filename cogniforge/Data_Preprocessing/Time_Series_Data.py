@@ -2,6 +2,7 @@ import streamlit as st
 from datetime import datetime
 from furthrmind import Furthrmind as API
 from furthrmind.file_loader import FileLoader
+import config
 
 #test #test....
 if 'ts_subpage' not in st.session_state:
@@ -106,7 +107,7 @@ if st.session_state.ts_subpage == "Load Data":
                         del st.session_state[key]
                 st.rerun()
 
-    st.write("Download your data from the [FURTHRmind](https://furthr.informatik.uni-marburg.de/) database.")
+    st.write(f"Download your data from the [FURTHRmind]({config.furthr['host']}) database.")
     try:
         from utils.dataloader import DataLoader
         from utils.furthr import FURTHRmind

@@ -22,6 +22,7 @@ from cogniforge.utils.furthr import FURTHRmind
 from cogniforge.utils.object_select_box import selectbox
 from cogniforge.utils.plotting import plot_sampled, plot_xy_chart
 from cogniforge.utils.state_button import button
+import config
 
 def save_univariate_time_series(df: pd.DataFrame, selected_column: str, output_path: str):
     if df.index.name is not None:
@@ -83,7 +84,7 @@ st.write(
     "Welcome to the Layer Thickness tool. Here you can analyze and visualize the thickness of your layer"
 )
 st.write(
-    "Upload your data to the [FURTHRmind](https://furthr.informatik.uni-marburg.de/) database. Then, here, you can choose the correct dataset and let our algorithms tell you the quality of your layer."
+    f"Upload your data to the [FURTHRmind]({config.furthr['host']}) database. Then, here, you can choose the correct dataset and let our algorithms tell you the quality of your layer."
 )
 
 if "fileName" not in st.session_state:
