@@ -8,7 +8,7 @@ import config
 
 st.set_page_config(page_title="CogniForge | Roughness", page_icon="🗻")
 
-st.write("""# Roughness Prediction
+st.write("""# Roughness Estimation
 
 This page is for the Roughness tool developed by Valerie Durbach.""")
 

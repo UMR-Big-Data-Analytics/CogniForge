@@ -6,9 +6,9 @@ from utils.furthr import FURTHRmind
 from utils.ml import load_model, load_images, predict
 import config
 
-st.set_page_config(page_title="CogniForge | Rust", page_icon="⛓️")
+st.set_page_config(page_title="CogniForge | Rust", page_icon="🧱")
 
-st.write("""# Rust Prediction
+st.write("""# Rust Detection
 
 This page is for the Rust tool developed by Valerie Durbach.""")
 
