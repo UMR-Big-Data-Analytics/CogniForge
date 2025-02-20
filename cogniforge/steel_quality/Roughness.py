@@ -59,12 +59,12 @@ with tab_model:
     model_widget = FURTHRmind(id="model")
 
     if images_widget.selected:
-        st.write("Only roughness prediction models compatible with the resolution of the selected data get shown below.")
+        st.write("Only roughness estimation models compatible with the resolution of the selected data get shown below.")
         model_widget.file_extension = "keras"
         model_widget.force_group_id = config.furthr['model_group_id']
         model_widget.container_category = "Code"
         model_widget.expected_fielddata = {
-            'Model Purpose': "Roughness Prediction",
+            'Model Purpose': "Roughness Estimation",
             'Image Width': images_width,
             'Image Height': images_height,
             'Model Architecture': "ANY",

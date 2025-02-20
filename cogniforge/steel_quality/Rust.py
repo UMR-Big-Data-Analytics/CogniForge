@@ -58,12 +58,12 @@ with tab_model:
     model_widget = FURTHRmind(id="model")
 
     if images_widget.selected:
-        st.write("Only rust prediction models compatible with the resolution of the selected data get shown below.")
+        st.write("Only rust detection models compatible with the resolution of the selected data get shown below.")
         model_widget.file_extension = "keras"
         model_widget.force_group_id = config.furthr['model_group_id']
         model_widget.container_category = "Code"
         model_widget.expected_fielddata = {
-            'Model Purpose': "Rust Prediction",
+            'Model Purpose': "Rust Detection",
             'Image Width': images_width,
             'Image Height': images_height,
             'Model Architecture': "ANY",
