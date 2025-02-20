@@ -108,7 +108,7 @@ with tab_prediction:
 
     if st.button("Predict", disabled=is_prediction_blocked):
         model = load_model(model_widget.selected.files[0])
-        images_result, preprocessed_images = load_images(images_widget.selected, model_name, grayscale, pretrained)
+        images_result, preprocessed_images = load_images(images_widget.selected, model_name, grayscale, pretrained, False)
         custom_cache_key = (model_widget.selected.id, images_widget.selected.id)
         predictions = predict(model, preprocessed_images, True, custom_cache_key)
         rust_percent, df = format_output(images_widget.selected, images_result, predictions, custom_cache_key)
