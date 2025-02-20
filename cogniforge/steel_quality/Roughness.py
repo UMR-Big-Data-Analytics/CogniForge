@@ -17,6 +17,7 @@ This page is for the Roughness tool developed by Valerie Durbach.""")
 def format_output(_images_container, _images_result, _predictions, custom_cache_key):
     min_roughness = np.min(predictions)
     max_roughness = np.max(predictions)
+    avg_roughness = np.average(predictions)
 
     df = pd.DataFrame({
         "Filename": [o[1] for o in _images_result],
@@ -24,7 +25,7 @@ def format_output(_images_container, _images_result, _predictions, custom_cache_
         "Link": ["/Photo?file_id=" + file.id for file in _images_container.files]
     })
     df = df.sort_values(by="Roughness", ascending=False)
-    return min_roughness, max_roughness, df
+    return min_roughness, max_roughness, avg_roughness, df
 
 
 tab_data, tab_training, tab_model, tab_prediction = st.tabs(["Data", "Model Training", "Model Selection", "Prediction Analysis"])
@@ -112,10 +113,12 @@ with tab_prediction:
         images_result, preprocessed_images = load_images(images_widget.selected, model_name, grayscale, pretrained)
         custom_cache_key = (model_widget.selected.id, images_widget.selected.id)
         predictions = predict(model, preprocessed_images, False, custom_cache_key)
-        min_roughness, max_roughness, df = format_output(images_widget.selected, images_result, predictions, custom_cache_key)
+        min_roughness, max_roughness, avg_roughness, df = format_output(images_widget.selected, images_result, predictions, custom_cache_key)
 
-        st.metric(label="Minimum Roughness", value=f"{min_roughness} μm")
-        st.metric(label="Maximum Roughness", value=f"{max_roughness} μm")
+        col1, col2 = st.columns(2)
+        col1.metric(label="Minimum Roughness", value=f"{min_roughness:.2f} μm")
+        col2.metric(label="Maximum Roughness", value=f"{max_roughness:.2f} μm")
+        st.metric(label="Average Roughness", value=f"{avg_roughness:.2f} μm")
         st.dataframe(
             df,
             column_config={
