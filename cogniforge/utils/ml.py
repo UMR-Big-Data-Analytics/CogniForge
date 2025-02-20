@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.fftpack import fft2, fftshift
 import streamlit as st
 import tempfile
 import tensorflow as tf
@@ -19,17 +20,26 @@ def load_model(model_file):
 
 # need to do spinner ourself, else inner progress bar gets hidden
 @st.cache_data(show_spinner=False, hash_funcs={"furthrmind.collection.sample.Sample": hash_furthr_item})
-def load_images(images_container, architecture, grayscale, pretrain):
+def load_images(images_container, architecture, grayscale, pretrain, fft=True):
+    grayscale = False
+    pretrain = True
+    fft=False
+    architecture="EfficientNetB0"
     with st.spinner("Running `load_images(...)`."):
         images_result = download_item_bytes(images_container)
         image_arrays = []
 
         for img_file, _ in images_result:
             with Image.open(img_file) as im:
-                if grayscale:
-                    im_array = np.array(im.convert("RGB"))
-                    im = tf.image.rgb_to_grayscale(im_array).numpy()
-                image_arrays.append(np.array(im))
+                if grayscale or fft:
+                    im = im.convert("L")
+
+                if fft:
+                    fft_image = apply_fft(np.array(im))
+                    print(fft_image.shape)
+                    image_arrays.append(fft_image)
+                else:
+                    image_arrays.append(np.array(im))
 
         X = image_arrays
         X = np.array([np.array(val) for val in X])
@@ -52,5 +62,32 @@ def predict(_model, _X, _classification, custom_cache_key):
     if _classification:
         # only for the Classification Task
         predictions = np.asarray(predictions).argmax(axis=1)
+    elif predictions.ndim > 1:
+        # needed for ResNet50 and maybe others
+        predictions = predictions.ravel()
 
     return predictions
+
+
+def apply_fft(image):
+    # Remove the channel dimension temporarily if it exists
+    if len(image.shape) == 3 and image.shape[-1] == 1:
+        image = image[:, :, 0]  # Remove the last dimension (channel)
+
+    # Perform 2D FFT and shift the zero frequency component to the center
+    fft_image = fft2(image)
+    fft_image_shifted = fftshift(fft_image)
+
+    # Calculate the magnitude spectrum and take the logarithm
+    magnitude_spectrum = np.log(np.abs(fft_image_shifted) + 1)
+
+    # Normalize to 0-255
+    magnitude_spectrum = (magnitude_spectrum - magnitude_spectrum.min()) / (
+        magnitude_spectrum.max() - magnitude_spectrum.min()
+    )
+    magnitude_spectrum = (magnitude_spectrum * 255).astype(np.uint8)
+
+    # Add back the single channel dimension to keep shape consistent
+    magnitude_spectrum = magnitude_spectrum[:, :, np.newaxis]
+
+    return magnitude_spectrum
