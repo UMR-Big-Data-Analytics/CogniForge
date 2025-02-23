@@ -5,11 +5,17 @@ import pandas as pd
 import numpy as np
 
 def plot_sampled(df: pd.DataFrame):
+    if df is None:
+        df = st.session_state.current_df.copy() if 'current_df' in st.session_state and st.session_state.current_df is not None else None
+        if df is None:
+            st.error("Please load data first using the Load Data Page.")
+            return None
+
+    # ***Dataset Information - Moved and updated***
     st.write("#### Current Dataset Information")
     dataset_name = st.session_state.get('current_dataset_name', 'Unnamed Dataset')
     st.markdown(f"**Dataset Name:** {dataset_name}")
-    actual_rows = len(df)
-    st.write(f"Using a dataset with {actual_rows:,} rows")
+    st.write(f"Using a dataset with {len(st.session_state.current_df):,} rows")
 
     columns = [col for col in df.columns if col != 'Zeit[(s)]']
     chosen_columns = st.multiselect("Choose columns", columns)
