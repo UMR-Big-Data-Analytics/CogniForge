@@ -5,6 +5,12 @@ import pandas as pd
 import numpy as np
 
 def plot_sampled(df: pd.DataFrame):
+    st.write("#### Current Dataset Information")
+    dataset_name = st.session_state.get('current_dataset_name', 'Unnamed Dataset')
+    st.markdown(f"**Dataset Name:** {dataset_name}")
+    actual_rows = len(df)
+    st.write(f"Using a dataset with {actual_rows:,} rows")
+
     columns = [col for col in df.columns if col != 'Zeit[(s)]']
     chosen_columns = st.multiselect("Choose columns", columns)
 
