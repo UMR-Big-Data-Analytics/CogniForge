@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from statsmodels.tsa.stattools import adfuller
 from scipy.stats import linregress
-
+from utils.session_state_management import update_session_state
 
 def initialize_session_state():
     """Initialize required session state variables if they don't exist."""
@@ -164,26 +164,22 @@ def detrend_linear(data, time):
 def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
     initialize_session_state()
 
-    if df is not None:
-        st.session_state.current_df = df.copy()
+    if df is None:
+        df = st.session_state.current_df.copy() if 'current_df' in st.session_state and st.session_state.current_df is not None else None
+        if df is None:
+            st.error("Please load data first using the Load Data Page.")
+            return None
 
-    if st.session_state.current_df is None:
-        st.error("Please load data first using the Load Data Page.")
-        return None
-
-    df = st.session_state.get('current_df').copy()
     # ***Dataset Information - Moved and updated***
     st.write("#### Current Dataset Information")
     dataset_name = st.session_state.get('current_dataset_name', 'Unnamed Dataset')
     st.markdown(f"**Dataset Name:** {dataset_name}")
-    st.write(f"Using a dataset with {len(df):,} rows")
+    st.write(f"Using a dataset with {len(st.session_state.current_df):,} rows")
 
     if st.session_state.analysis_history:
         with st.expander("📝 **Analysis History**", expanded=False):
             for message in st.session_state.analysis_history:
                 st.write(message)
-
-    df = st.session_state.current_df
     chosen_columns = st.multiselect("Choose columns to analyze", options=df.columns[1:])
 
     if not chosen_columns:
@@ -317,7 +313,7 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
                         result_column = f"{chosen_column}_detrended"
                         df[result_column] = detrended
                         record_detrend_step(chosen_column, detrend_method, params)
-                        st.session_state.current_df = df.copy()
+                        update_session_state(df, analysis_type='detrend')
                         st.success(f"✅ Detrending applied to {chosen_column}")
 
     # Dataset Preview
@@ -330,4 +326,4 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
             lambda x: f'{float(x):.6f}'.replace(',', '.') if pd.notnull(x) else x)
         display_df.index = range(1, len(display_df) + 1)
     st.dataframe(display_df, use_container_width=True, height=350)
-    return df
+    return st.session_state.current_df

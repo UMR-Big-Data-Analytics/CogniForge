@@ -5,7 +5,7 @@ from scipy import stats
 import plotly.graph_objects as go
 from typing import Dict, Any
 from datetime import datetime
-
+from utils.session_state_management import update_session_state
 """
 Perform smoothing analysis on selected columns using exponential smoothing
 Functions:
@@ -175,41 +175,33 @@ def record_smoothing_step(column: str, alpha: float, stats: dict):
 
 
 def analyze_smooth(df: pd.DataFrame = None) -> pd.DataFrame:
-    """Main function for smoothing"""
     initialize_session_state()
     if 'selected_columns' not in st.session_state:
         st.session_state.selected_columns = []
 
     if df is not None:
-        st.session_state.current_df = df.copy()
-    if st.session_state.current_df is None:
+        pass
+    elif 'current_df' in st.session_state and st.session_state.current_df is not None:
+        df = st.session_state.current_df.copy()
+    else:
         st.error("Please load data first using the Data Loader.")
         return None
 
-    # Display history
+    st.write("##### Current Dataset Information")
+    dataset_name = st.session_state.get('current_dataset_name', 'Unnamed Dataset')
+    st.markdown(f"**Dataset Name:** {dataset_name}")
+    actual_rows = len(st.session_state.current_df)
+    st.write(f"Using a dataset with {actual_rows:,} rows")
+
     if st.session_state.analysis_history:
         with st.expander("📝 **Analysis History**", expanded=False):
             for message in st.session_state.analysis_history:
                 st.write(message)
 
-    # Display current dataset info
-    df = st.session_state.current_df
-    st.write("##### Current Dataset Information")
-    dataset_name = st.session_state.get('current_dataset_name', 'Unnamed Dataset')
-    st.markdown(f"**Dataset Name:** {dataset_name}")
-    actual_rows = len(df)
-    st.write(f"Using a dataset with {actual_rows:,} rows")
+
 
     timestamps = df['Zeit[(s)]'].values
-    # Select variables
-    chosen_columns = st.multiselect(
-        "Choose columns to smooth",
-        options=list(df.columns[1:]),
-        default=st.session_state.selected_columns,
-        format_func=lambda x: ' '.join(x) if isinstance(x, tuple) else str(x),
-        key="column_multiselect"
-    )
-
+    chosen_columns = st.multiselect("Choose columns to analyze", options=df.columns[1:])
     if not chosen_columns:
         st.info("Please choose at least one column to smooth.")
         return df
@@ -287,6 +279,7 @@ def analyze_smooth(df: pd.DataFrame = None) -> pd.DataFrame:
                     st.session_state.smoothing_stats[result_column] = stats
                     record_smoothing_step(chosen_column, alpha, stats)
                     processed_columns.append(chosen_column)
+                    update_session_state(df, analysis_type='smooth')
                     st.success(f"✅ Smoothing applied to {chosen_column}")
             else:
                 st.success("✓ No significant noise detected - No smoothing required")
@@ -306,4 +299,4 @@ def analyze_smooth(df: pd.DataFrame = None) -> pd.DataFrame:
             lambda x: f'{float(x):.6f}'.replace(',', '.') if pd.notnull(x) else x)
         display_df.index = range(1, len(display_df) + 1)
     st.dataframe(display_df, use_container_width=True, height=350)
-    return df
+    return st.session_state.current_df

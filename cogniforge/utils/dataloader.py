@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from io import StringIO
 import pandas as pd
 import streamlit as st
-from utils.state_button import button
+from utils.session_state_management import update_session_state
 
 #test test
 @dataclass
@@ -223,9 +223,7 @@ class DataLoader:
                 self.df = self._read_csv()
 
                 if self.df is not None and not self.df.empty:
-                    st.session_state.current_df = self.df.copy()
-                    st.session_state.original_df = self.df.copy()
-                    st.session_state.processing_complete = True
+                    update_session_state(self.df, dataset_name=filename)
 
                     st.write("### Processed Data")
                     dataset_info = (
@@ -243,10 +241,10 @@ class DataLoader:
             st.error(f"Data processing error: {str(e)}")
             return False
 
-
     def get_dataframe(self) -> pd.DataFrame:
         try:
             filename = getattr(self.csv, 'name', 'Unknown Dataset')
+
             if st.session_state.current_dataset_name != filename:
                 st.info(f"New dataset detected: {filename}")
                 if not self._check_for_existing_analysis():
