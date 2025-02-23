@@ -1,15 +1,21 @@
 import streamlit as st
 from datetime import datetime
+import pandas as pd
+import time
 from furthrmind import Furthrmind as API
 from furthrmind.file_loader import FileLoader
+from utils.downsampling import downsampling_page
+
 
 #test #test....
 if 'ts_subpage' not in st.session_state:
-    st.session_state.ts_subpage = "Overview page"
+    st.session_state.ts_subpage = "Overview"
 if 'df' not in st.session_state:
     st.session_state.df = None
 if 'analysis_history' not in st.session_state:
     st.session_state.analysis_history = []
+if 'current_analysis_type' not in st.session_state:
+    st.session_state.current_analysis_type = None
 if 'original_df' not in st.session_state:
     st.session_state.original_df = None
 if 'use_full_dataset' not in st.session_state:
@@ -27,24 +33,31 @@ if 'data_info' not in st.session_state:
         'use_full_dataset': True,
         'total_rows': 0
     }
-if 'current_analysis_type' not in st.session_state:
-    st.session_state.current_analysis_type = None
 
 
 def handle_revert():
     """Handle revert to original dataset"""
+    current_timestamp = datetime.now()
     st.session_state.df = st.session_state.original_df.copy()
     st.session_state.current_analysis_type = None
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
-    revert_message = f"Data reverted to original state ({timestamp})"
+    st.session_state.processed_columns = {
+        'detrended': set(),
+        'smoothed': set(),
+        'downsampled': set()
+    }
+    revert_message = f"[{current_timestamp.strftime('%Y-%m-%d %H:%M')}] Data reverted to the original state"
     st.session_state.analysis_history.append(revert_message)
     if st.session_state.ts_subpage == "Detrend Data":
         st.session_state.detrend_steps = []
         st.session_state.detrending_active = False
+        st.session_state.show_plots = False
     elif st.session_state.ts_subpage == "Smooth Data":
         st.session_state.smoothing_steps = []
         st.session_state.smoothing_active = False
-
+    elif st.session_state.ts_subpage == "Downsample Data":
+        st.session_state.downsample_steps = []
+        st.session_state.downsampling_active = False
+        st.session_state.show_downsampling_plots = False
 
 with st.sidebar:
     st.subheader("Time Series Tools")
@@ -54,12 +67,15 @@ with st.sidebar:
         st.session_state.ts_subpage = "Load Data"
     if st.button("📊 Plot Data", use_container_width=True, key="ts_plot"):
         st.session_state.ts_subpage = "Plot Data"
-    if st.button("📉 Detrend Data", use_container_width=True, key="ts_detrend"):
+    if st.button("🧰 Detrend Data", use_container_width=True, key="ts_detrend"):
         st.session_state.ts_subpage = "Detrend Data"
-    if st.button("📉 Smooth Data", use_container_width=True, key="ts_smooth"):
+    if st.button("🧰 Smooth Data", use_container_width=True, key="ts_smooth"):
         st.session_state.ts_subpage = "Smooth Data"
+    if st.button("🧰 Downsample Data", use_container_width=True, key="ts_downsample"):
+        st.session_state.ts_subpage = "Downsample Data"
     if st.button("📤 Upload Results", use_container_width=True, key="ts_upload"):
         st.session_state.ts_subpage = "Upload Results"
+
 
 # Subpages
 if st.session_state.ts_subpage == "Overview":
@@ -133,14 +149,17 @@ if st.session_state.ts_subpage == "Load Data":
                     dl = DataLoader(csv=data)
                     df = dl.get_dataframe()
                     if df is not None and not df.empty:
+                        # Update all relevant session states for the new dataset
                         st.session_state.df = df
                         st.session_state.original_df = df.copy()
+                        st.session_state.detrended_df = df.copy()
                         if is_new_dataset:
                             st.session_state.analysis_history = []
                             st.session_state.detrending_active = False
                             st.session_state.smoothing_active = False
                             st.session_state.detrend_steps = []
                             st.session_state.smoothing_steps = []
+                            st.session_state.show_plots = False
     except ImportError as e:
         st.error(f"Import error: {e}. Please ensure that the `cogniforge` package is correctly installed.")
     except Exception as e:
@@ -148,20 +167,45 @@ if st.session_state.ts_subpage == "Load Data":
 
 
 
+
 elif st.session_state.ts_subpage == "Plot Data":
     from utils.plotting import plot_sampled
     st.title("📊 Plot Data")
+    with st.expander("ℹ️**How to Use**"):
+        st.markdown("""
+        ##### Time Series Data Visualization
+        **This tool helps you to:**
+        1. Visualize your data over time
+        2. Normalize your data to compare different columns more effectively
+        3. Zoom in on specific parts of the time series
+
+        **How to Use:**
+        - Select the column(s) you want to visualize from the available data
+        - Optionally, choose to normalize the data to scale values between 0 and 1
+        - Use the interactive chart to zoom in and explore the data more closely
+        """)
     if st.session_state.df is not None:
-        st.subheader("Data Visualization")
         plot_sampled(st.session_state.df)
     else:
         st.warning("Please load and process data first in the Load Data section.")
 
 
-
 elif st.session_state.ts_subpage == "Detrend Data":
     from utils.detrending import analyze_detrend
-    st.title("📉 Detrend Data")
+    st.title("🧰 Detrend Data")
+    with st.expander("**ℹ️How to Use**"):
+        st.markdown("""
+        **This tool helps you:**
+        1. Detect trends in your selected column
+        2. Preview detrending methods
+        3. Visualize the impact of detrending before applying it.
+
+        **How to Use:**
+        - Select the column(s) to analyze
+        - If a trend is detected, a detrend method is suggested. Users can also choose manually
+        - Review trend statistics and visualization
+        - Decide whether to apply detrending
+        """)
     if st.session_state.df is not None:
         st.session_state.data_info['total_rows'] = len(st.session_state.df)
         try:
@@ -169,14 +213,14 @@ elif st.session_state.ts_subpage == "Detrend Data":
             if detrended_df is not None:
                 st.session_state.df = detrended_df
                 if st.session_state.detrend_steps:
-                    st.session_state.current_analysis_type = "detrend" #set analysis type
-                    st.write("### Detrending Summary")
-                    st.write(f"Total columns detrended: {len(st.session_state.detrend_steps)}")
-                    # Option to revert
-                    if st.button("Revert to Original Data"):
-                        handle_revert()
-                        st.success("Successfully reverted to original data")
-                        st.rerun()
+                    st.session_state.current_analysis_type = "detrend"
+                    col1, col2 = st.columns([1, 4])
+                    with col1:
+                        if st.button("Revert to Original Data"):
+                            st.session_state.show_plots = False
+                            handle_revert()
+                            st.success("Successfully reverted to original data")
+                            st.rerun()
 
         except Exception as e:
             st.error(f"An error occurred during detrending: {str(e)}")
@@ -187,11 +231,25 @@ elif st.session_state.ts_subpage == "Detrend Data":
 
 elif st.session_state.ts_subpage == "Smooth Data":
     from utils.smoothing import analyze_smooth
-    st.title("📉 Smooth Data")
+    st.title("🧰 Smooth Data")
+    with st.expander("**ℹ️How to Use**"):
+        st.markdown("""
+            **This tool helps you:**
+            1. Smooth time series data using exponential smoothing to reduce noise and fluctuations
+            4. Visualize the before-and-after effects of smoothing on your data
+            5. Apply smoothing to the dataset and preview the results
+    
+            **Steps:**
+            - Select the columns you want to smooth from the list
+            - The tool will automatically suggest an initial smoothing factor (α) based on the column's volatility. Users can also adjust manually
+            - Click "Plot Data" to review the visual comparison of original and smoothed data
+            - Apply smoothing to the dataset
+            - Optionally, revert back to the original data if needed by clicking "Revert to Original Data"
+        """)
+
     if st.session_state.df is not None:
         st.session_state.data_info['total_rows'] = len(st.session_state.df)
         try:
-            # smoothing analysis
             smoothed_df = analyze_smooth(st.session_state.df)
             if smoothed_df is not None:
                 st.session_state.df = smoothed_df
@@ -201,16 +259,37 @@ elif st.session_state.ts_subpage == "Smooth Data":
                     if st.button("Revert to Original Data"):
                         handle_revert()
                         st.success("Successfully reverted to original data")
-                        st.write("### Smoothing Summary")
-                        st.write("Total columns smoothed: 0")
                         st.rerun()
-
-                if st.session_state.smoothing_steps:
-                        st.write("### Smoothing Summary")
-                        st.write(f"Total columns smoothed: {len(st.session_state.smoothing_steps)}")
         except Exception as e:
             st.error(f"An error occurred during smoothing: {str(e)}")
             st.exception(e)
+    else:
+        st.warning("Please load and process data first in the Load Data section.")
+
+elif st.session_state.ts_subpage == "Downsample Data":
+    st.title("🧰 Data Downsampling Preview")
+    with st.expander("ℹ️ **How to use**"):
+        st.markdown("""
+                   **This tool helps you:**
+                   1. Reduces the dataset size using LTTB downsampling
+                   2. Compare original and downsampled data to evaluate the impact of downsampling
+                   3. Apply downsampling to the dataset and preview the results
+
+                   **Steps:**
+                   - Select the number of points you'd like to downsample the data to using the slider
+                   - Click on "Plot Data" to review the visual comparison of original and downsampled data
+                   - If satisfied, click "Apply Downsample Data" to apply downsampling to your dataset
+                   - Option to revert back to the original data if needed by clicking "Revert to Original Data"
+                   """)
+
+    if st.session_state.df is not None:
+        st.session_state.current_analysis_type = "downsample"
+        downsampling_page(st.session_state.current_df)
+        if st.button("Revert to Original Data"):
+            if st.session_state.original_df is not None:
+                handle_revert()
+                st.success("Successfully reverted to original data")
+                st.rerun()
     else:
         st.warning("Please load and process data first in the Load Data section.")
 
