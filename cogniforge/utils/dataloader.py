@@ -39,12 +39,16 @@ class DataLoader:
             st.session_state.detrending_active = False
         if 'smoothing_active' not in st.session_state:
             st.session_state.smoothing_active = False
+        if 'downsampling_active' not in st.session_state:
+            st.session_state.downsampling_active = False
         if 'form_params' not in st.session_state:
             st.session_state.form_params = {
                 'header': 1,
                 'skiprows': 0,
                 'end_row': min(1000, st.session_state.total_rows)
             }
+        if 'show_download_options' not in st.session_state:
+            st.session_state.show_download_options = False
 
     def reset_state(self):
         """Reset the state when switching dataset modes."""
@@ -61,6 +65,7 @@ class DataLoader:
             'parameters_set': False,
             'detrending_active': False,
             'smoothing_active': False,
+            'downsampling_active': False,
             'form_params': {
                 'header': 1,
                 'skiprows': 0,
@@ -68,16 +73,32 @@ class DataLoader:
             }
         })
 
+    def _check_for_existing_analysis(self):
+        """Check if there's existing analysis when changing datasets."""
+        filename = getattr(self.csv, 'name', 'Unknown Dataset')
+        if (st.session_state.current_dataset_name is None or
+                st.session_state.current_dataset_name == filename):
+            st.session_state.show_download_options = True
+            return True
 
-    def _get_total_rows(self) -> int:
-        """Returns the total number of rows in the CSV file."""
-        try:
-            self.csv.seek(0)
-            df = pd.read_csv(self.csv, sep=self.delimiter, encoding="latin1", header=None)
-            return len(df)
-        except Exception as e:
-            st.error(f"Error counting rows: {str(e)}")
-            return 0
+        current_df_exists = (
+                st.session_state.get('current_df') is not None and
+                not st.session_state.current_df.empty
+        )
+
+        if (current_df_exists and
+                (st.session_state.get('detrending_active') or
+                 st.session_state.get('smoothing_active') or
+                 st.session_state.get('downsampling_active'))):
+            st.warning("⚠️ Loading new data will clear all existing analyses (including downsampling).")
+            proceed = st.button("Proceed with new data")
+            if proceed:
+                st.session_state.show_download_options = True
+                st.session_state.detrending_active = False
+                st.session_state.smoothing_active = False
+                st.session_state.downsampling_active = False
+            return proceed
+        return True
 
     def _show_current_dataset_info(self):
         """Shows information about the currently loaded dataset and any active analyses"""
@@ -95,6 +116,15 @@ class DataLoader:
                 warning_message.append("• Active smoothing analysis in progress")
             return warning_message
 
+    def _get_total_rows(self) -> int:
+        """Returns the total number of rows in the CSV file."""
+        try:
+            self.csv.seek(0)
+            df = pd.read_csv(self.csv, sep=self.delimiter, encoding="latin1", header=None)
+            return len(df)
+        except Exception as e:
+            st.error(f"Error counting rows: {str(e)}")
+            return 0
     def _preview(self):
         """Shows a preview of the data"""
         st.write("### Data Preview")
@@ -167,14 +197,14 @@ class DataLoader:
             page = 1
 
         start = (page - 1) * page_size
-        end = start + page_size
-        if end > total_rows:
-            end = total_rows
+        end = min(start + page_size, total_rows)
 
         if not st.session_state.use_full_dataset:
-            adjusted_end = end - (self.skiprows)
-            adjusted_start = start + 1
-            st.write(f"Showing rows {adjusted_start:,} to {adjusted_end:,} out of {total_rows - self.skiprows:,}")
+            # Calculate the actual row numbers relative to the original file
+            base_row = self.header + self.skiprows
+            adjusted_start = base_row + start
+            adjusted_end = base_row + end - 1
+            st.write(f"Showing rows {adjusted_start:,} to {adjusted_end:,} out of {total_rows:,}")
         else:
             st.write(f"Showing rows {start + 1:,} to {end:,} out of {total_rows:,}")
 
@@ -185,25 +215,13 @@ class DataLoader:
         for col in number_cols:
             page_df[col] = page_df[col].map(
                 lambda x: f'{float(x):.6f}'.replace(',', '.') if isinstance(x, (float, int)) and pd.notnull(x) else x)
-        st.dataframe(page_df, use_container_width=True, height=350)
 
-    def _check_for_existing_analysis(self):
-        """Check if there's existing analysis when changing datasets."""
-        filename = getattr(self.csv, 'name', 'Unknown Dataset')
-        if (st.session_state.current_dataset_name is None or
-                st.session_state.current_dataset_name == filename):
-            return True
-        if (st.session_state.get('current_df') is not None and
-                (st.session_state.get('detrending_active') or
-                 st.session_state.get('smoothing_active'))):
-            st.warning("⚠️ Loading new data will clear all existing analyses.")
-            proceed = st.button("Proceed with new data")
-            return proceed
-        return True
+        st.dataframe(page_df, use_container_width=True, height=350)
 
 
     def _process_submitted_data(self, parameters_changed):
         """Process the submitted data"""
+
         try:
             if parameters_changed:
                 self.reset_state()
@@ -211,6 +229,7 @@ class DataLoader:
                 filename = getattr(self.csv, 'name', 'Unknown Dataset')
                 if st.session_state.current_dataset_name != filename:
                     st.info(f"Dataset changed: {filename}")
+                    st.session_state.analysis_history = []
                     st.session_state.total_rows = self._get_total_rows()
                     self.reset_state()
 
@@ -219,6 +238,7 @@ class DataLoader:
 
                 if self.df is not None and not self.df.empty:
                     st.session_state.current_df = self.df.copy()
+                    st.session_state.original_df = self.df.copy()
                     st.session_state.processing_complete = True
 
                     st.write("### Processed Data")
@@ -242,102 +262,106 @@ class DataLoader:
     def get_dataframe(self) -> pd.DataFrame:
         try:
             filename = getattr(self.csv, 'name', 'Unknown Dataset')
-
             if st.session_state.current_dataset_name != filename:
                 st.info(f"New dataset detected: {filename}")
                 if not self._check_for_existing_analysis():
                     return None
 
-                st.session_state.total_rows = self._get_total_rows()
-                self.reset_state()
-                st.session_state.current_dataset_name = filename
+                if st.session_state.show_download_options:
+                    st.session_state.total_rows = self._get_total_rows()
+                    self.reset_state()
+                    st.session_state.current_dataset_name = filename
+                else:
+                    return None
 
-            if not st.session_state.get('parameters_set', False):
+            if (not st.session_state.get('parameters_set', False) and
+                    st.session_state.show_download_options):
                 self._preview()
 
-            st.write("### Dataset Selection")
-            st.write(f"Dataset: {filename}")
-            total_rows = st.session_state.total_rows
-            st.write(f"Total rows in dataset: {total_rows:,}")
+            if st.session_state.show_download_options:
+                st.write("### Dataset Selection")
+                st.write(f"Dataset: {filename}")
+                total_rows = st.session_state.total_rows
+                st.write(f"Total rows in dataset: {total_rows:,}")
 
+                use_full_dataset = st.checkbox(
+                    "Use entire dataset",
+                    value=st.session_state.use_full_dataset,
+                    help="Check to use the complete dataset. Uncheck to specify a sample range.",
+                    key="dataset_mode"
+                )
 
-            use_full_dataset = st.checkbox(
-                "Use entire dataset",
-                value=st.session_state.use_full_dataset,
-                help="Check to use the complete dataset. Uncheck to specify a sample range.",
-                key="dataset_mode"
-            )
+                if use_full_dataset != st.session_state.use_full_dataset:
+                    st.session_state.use_full_dataset = use_full_dataset
+                    st.session_state.form_params = {
+                        'header': 1,
+                        'skiprows': 0,
+                        'end_row': total_rows if use_full_dataset else min(1000, total_rows)
+                    }
 
-            if use_full_dataset != st.session_state.use_full_dataset:
-                st.session_state.use_full_dataset = use_full_dataset
-                st.session_state.form_params = {
-                    'header': 1,
-                    'skiprows': 0,
-                    'end_row': total_rows if use_full_dataset else min(1000, total_rows)
-                }
+                with st.form("dataset_selection_form", clear_on_submit=False):
+                    if not use_full_dataset:
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            header = st.number_input(
+                                "Data starts at row",
+                                value=st.session_state.form_params['header'],
+                                min_value=1,
+                                step=1,
+                                help="Specify the row where data begins",
+                                key="header_input"
+                            )
+                        with col2:
+                            skiprows = st.number_input(
+                                "Skip additional data rows",
+                                min_value=0,
+                                value=st.session_state.form_params['skiprows'],
+                                step=1,
+                                help="Number of data rows to skip",
+                                key="skiprows_input"
+                            )
+                        with col3:
+                            min_end_row = header + skiprows + 1
+                            end_row = st.number_input(
+                                "End Row",
+                                min_value=min_end_row,
+                                value=max(min_end_row, st.session_state.form_params['end_row']),
+                                max_value=total_rows,
+                                step=1,
+                                help=f"Last row to include (maximum: {total_rows:,})",
+                                key="end_row_input"
+                            )
 
-            with st.form("dataset_selection_form", clear_on_submit=False):
-                if not use_full_dataset:
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        header = st.number_input(
-                            "Data starts at row",
-                            value=st.session_state.form_params['header'],
-                            min_value=1,
-                            step=1,
-                            help="Specify the row where data begins",
-                            key="header_input"
-                        )
-                    with col2:
-                        skiprows = st.number_input(
-                            "Skip additional data rows",
-                            min_value=0,
-                            value=st.session_state.form_params['skiprows'],
-                            step=1,
-                            help="Number of data rows to skip",
-                            key="skiprows_input"
-                        )
-                    with col3:
-                        min_end_row = header + skiprows + 1
-                        end_row = st.number_input(
-                            "End Row",
-                            min_value=min_end_row,
-                            value=max(min_end_row, st.session_state.form_params['end_row']),
-                            max_value=total_rows,
-                            step=1,
-                            help=f"Last row to include (maximum: {total_rows:,})",
-                            key="end_row_input"
-                        )
+                        actual_start_row = header + skiprows
+                        actual_row_count = end_row - actual_start_row
+                        st.write(
+                            f"Selected range: {actual_row_count:,} rows (from row {actual_start_row:,} to {end_row:,})")
+                    else:
+                        header = 1
+                        skiprows = 0
+                        end_row = total_rows
+                        st.write(f"Using complete dataset: {total_rows:,} rows")
 
-                    actual_start_row = header + skiprows
-                    actual_row_count = end_row - actual_start_row
-                    st.write(
-                        f"Selected range: {actual_row_count:,} rows (from row {actual_start_row:,} to {end_row:,})")
-                else:
-                    header = 1
-                    skiprows = 0
-                    end_row = total_rows
-                    st.write(f"Using complete dataset: {total_rows:,} rows")
+                    skip_blank_lines = st.checkbox("Skip blank lines", value=True)
+                    submitted = st.form_submit_button("Process Data")
 
-                skip_blank_lines = st.checkbox("Skip blank lines", value=True)
-                submitted = st.form_submit_button("Process Data")
+                if submitted:
+                    self.header = header
+                    self.skiprows = skiprows
+                    self.end_row = end_row
+                    self.skip_blank_lines = skip_blank_lines
 
-            if submitted:
-                self.header = header
-                self.skiprows = skiprows
-                self.end_row = end_row
-                self.skip_blank_lines = skip_blank_lines
+                    st.session_state.form_params = {
+                        'header': header,
+                        'skiprows': skiprows,
+                        'end_row': end_row
+                    }
 
-                st.session_state.form_params = {
-                    'header': header,
-                    'skiprows': skiprows,
-                    'end_row': end_row
-                }
+                    if self._process_submitted_data(True):
+                        st.session_state.parameters_set = True
+                        return self.df
 
-                if self._process_submitted_data(True):
-                    st.session_state.parameters_set = True
-                    return self.df
-            elif st.session_state.processing_complete and st.session_state.current_df is not None:
+            if st.session_state.processing_complete and st.session_state.current_df is not None:
                 st.write("### Current Processed Data")
                 self._display_large_dataframe(st.session_state.current_df, page_size=1000)
 
