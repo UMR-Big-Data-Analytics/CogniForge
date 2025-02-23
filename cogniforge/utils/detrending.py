@@ -38,7 +38,7 @@ def detect_trend(data: np.ndarray, timestamps: np.ndarray) -> dict:
     direction = "⬆ Increasing" if slope > 0 else "⬇ Decreasing"
     # Stationarity test
     adf_p_value = adfuller(data)[1]
-    r2_threshold = max(0.2, min(0.3, np.std(data) / np.mean(data)))
+    r2_threshold = 0.2
     stats_dict = {
         'r_squared': r_squared,
         'slope': slope,
