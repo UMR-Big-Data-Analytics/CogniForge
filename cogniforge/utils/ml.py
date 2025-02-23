@@ -3,6 +3,7 @@ from scipy.fftpack import fft2, fftshift
 import streamlit as st
 import tempfile
 import tensorflow as tf
+import os
 from PIL import Image
 from utils.furthr import download_item_bytes, hash_furthr_item
 
@@ -13,18 +14,14 @@ def load_model(model_file):
 
     with tempfile.NamedTemporaryFile(suffix=".keras") as fh:
         fh.write(model_bytes.getvalue())
-        fh.flush()
+        os.fsync(fh)
         model = tf.keras.models.load_model(fh.name)
     return model
 
 
 # need to do spinner ourself, else inner progress bar gets hidden
 @st.cache_data(show_spinner=False, hash_funcs={"furthrmind.collection.sample.Sample": hash_furthr_item})
-def load_images(images_container, architecture, grayscale, pretrain, fft=True):
-    grayscale = False
-    pretrain = True
-    fft=False
-    architecture="EfficientNetB0"
+def load_images(images_container, architecture, grayscale, pretrain, fft):
     with st.spinner("Running `load_images(...)`."):
         images_result = download_item_bytes(images_container)
         image_arrays = []
@@ -34,12 +31,12 @@ def load_images(images_container, architecture, grayscale, pretrain, fft=True):
                 if grayscale or fft:
                     im = im.convert("L")
 
+                np_im = np.array(im)
+
                 if fft:
-                    fft_image = apply_fft(np.array(im))
-                    print(fft_image.shape)
-                    image_arrays.append(fft_image)
-                else:
-                    image_arrays.append(np.array(im))
+                    np_im = apply_fft(np_im)
+
+                image_arrays.append(np_im)
 
         X = image_arrays
         X = np.array([np.array(val) for val in X])

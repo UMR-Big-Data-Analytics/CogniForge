@@ -210,22 +210,36 @@ class FURTHRmind:
         else:
             label = "Choose a file"
 
-        self.__selected = selectbox(
-            files, label=label, key=f"{self.__id}_file"
-        )
+        if not files:
+            st.error("No files found")
+            return
 
-        if self.__selected is None:
-            if self.file_extension:
-                st.error(f"No {self.file_extension} file found")
-            else:
-                st.error("No file found")
+        # Create a mapping from file id to File object.
+        files_by_id = {f.id: f for f in files}
+        file_ids = list(files_by_id.keys())
+
+        # Use a persistent key in session_state for the selected file's ID.
+        session_key = f"{self.__id}_selected_file_id"
+        if session_key not in st.session_state or st.session_state[session_key] not in file_ids:
+            st.session_state[session_key] = file_ids[0]
+
+        selected_file_id = st.selectbox(
+            label,
+            file_ids,
+            index=file_ids.index(st.session_state[session_key]),
+            key=f"{self.__id}_file",
+            format_func=lambda fid: files_by_id[fid].name
+        )
+        st.session_state[session_key] = selected_file_id
+        self.__selected = files_by_id[selected_file_id]
+
 
 
     def download_bytes_button(self) -> tuple[BytesIO, str] | None:
         """Download the selected item as bytes from the FURTHRmind database."""
         if self.__selected and button("Load", "load" + self.__id, stateful=True):
             return download_item_bytes(self.__selected, self.file_extension)
-    
+        
     def download_string_button(self) -> tuple[BytesIO, str] | None:
         """Download the selected item as string from the FURTHRmind database."""
         if self.__selected and button("Load", "load" + self.__id, stateful=True):
@@ -257,13 +271,14 @@ class FURTHRmind:
             file_loader.uploadFile(filePath=path_or_writer, parent=container_description)
         else:
             # useful to be able to only create a temp file when upload was pressed
-            with tempfile.NamedTemporaryFile(delete_on_close=False) as fh:
+            with tempfile.NamedTemporaryFile(delete=False) as fh:
                 _, file_name = path_or_writer(fh.name)
                 file_loader.uploadFile(
                     filePath=fh.name,
                     fileName=file_name,
                     parent=container_description
                 )
+                st.success("Anomaly score uploaded to furthrmind database")
 
     def upload_csv(self, csv: pd.DataFrame, name: str) -> None:
         """Upload a CSV file to the FURTHRmind database."""

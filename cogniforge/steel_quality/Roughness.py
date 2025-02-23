@@ -70,6 +70,7 @@ with tab_model:
             'Image Height': images_height,
             'Model Architecture': "ANY",
             'Image Grayscaling': "ANY",
+            'FFT Images': 'ANY',
             'Pretrained Weights': "ANY",
             'Optimizer': "ANY",
             'Activation Function': "ANY",
@@ -83,6 +84,8 @@ with tab_model:
                     model_name = single_field.value
                 elif single_field.field_name == 'Image Grayscaling':
                     grayscale = bool(single_field.value)
+                elif single_field.field_name == 'FFT Images':
+                    fft = bool(single_field.value)
                 elif single_field.field_name == 'Pretrained Weights':
                     pretrained = bool(single_field.value)
                 elif single_field.field_name == 'Optimizer':
@@ -97,6 +100,7 @@ with tab_model:
                 'Model Architecture': model_name,
                 'Expected Resolution': f"{images_width}x{images_height} px",
                 'Image Grayscaling': str(grayscale),
+                'FFT Images': str(fft),
                 'Pretrained Weights': str(pretrained),
                 'Optimizer': optimizer,
                 'Activation Function': activation,
@@ -110,7 +114,7 @@ with tab_prediction:
 
     if st.button("Predict", disabled=is_prediction_blocked):
         model = load_model(model_widget.selected.files[0])
-        images_result, preprocessed_images = load_images(images_widget.selected, model_name, grayscale, pretrained)
+        images_result, preprocessed_images = load_images(images_widget.selected, model_name, grayscale, pretrained, fft)
         custom_cache_key = (model_widget.selected.id, images_widget.selected.id)
         predictions = predict(model, preprocessed_images, False, custom_cache_key)
         min_roughness, max_roughness, avg_roughness, df = format_output(images_widget.selected, images_result, predictions, custom_cache_key)
