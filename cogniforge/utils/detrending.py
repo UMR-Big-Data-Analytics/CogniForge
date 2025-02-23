@@ -165,21 +165,18 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
     initialize_session_state()
 
     if df is not None:
-        if (st.session_state.detrended_df is None or
-                len(st.session_state.detrended_df) != len(df)):
-            st.session_state.detrended_df = df.copy()
         st.session_state.current_df = df.copy()
 
     if st.session_state.current_df is None:
         st.error("Please load data first using the Load Data Page.")
         return None
 
-    df = st.session_state.current_df
+    df = st.session_state.get('current_df').copy()
+    # ***Dataset Information - Moved and updated***
     st.write("#### Current Dataset Information")
     dataset_name = st.session_state.get('current_dataset_name', 'Unnamed Dataset')
     st.markdown(f"**Dataset Name:** {dataset_name}")
-    actual_rows = len(df)
-    st.write(f"Using a dataset with {actual_rows:,} rows")
+    st.write(f"Using a dataset with {len(df):,} rows")
 
     if st.session_state.analysis_history:
         with st.expander("📝 **Analysis History**", expanded=False):
@@ -311,6 +308,7 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
             if needs_detrending.get(chosen_column, False):
                 if st.button(f"Apply Detrending to {chosen_column}", key=f"btn_{chosen_column}", type="primary"):
                     with st.spinner('Applying detrending...'):
+                        st.session_state.current_df = df.copy()
                         data = df[chosen_column].astype(float).values
                         detrended, trend = (
                             detrend_linear(data, timestamps) if detrend_method == "Linear" else
@@ -324,12 +322,12 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
 
     # Dataset Preview
     st.write("### Dataset Preview")
-    preview_df = df.head(15)
+    preview_df = st.session_state.current_df.copy()
     display_df = preview_df.copy()
     numeric_cols = display_df.select_dtypes(include=['float64', 'float32']).columns
     for col in numeric_cols:
         display_df[col] = display_df[col].apply(
             lambda x: f'{float(x):.6f}'.replace(',', '.') if pd.notnull(x) else x)
-
+        display_df.index = range(1, len(display_df) + 1)
     st.dataframe(display_df, use_container_width=True, height=350)
     return df
