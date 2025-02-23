@@ -5,6 +5,7 @@ import time
 from furthrmind import Furthrmind as API
 from furthrmind.file_loader import FileLoader
 from utils.downsampling import downsampling_page
+from utils.session_state_management import update_session_state
 
 
 #test #test....
@@ -34,19 +35,24 @@ if 'data_info' not in st.session_state:
         'total_rows': 0
     }
 
-
 def handle_revert():
     """Handle revert to original dataset"""
     current_timestamp = datetime.now()
+    # Update both df and current_df to ensure consistency
     st.session_state.df = st.session_state.original_df.copy()
+    st.session_state.current_df = st.session_state.original_df.copy()
+
+    # Reset analysis type and processed columns
     st.session_state.current_analysis_type = None
     st.session_state.processed_columns = {
         'detrended': set(),
         'smoothed': set(),
         'downsampled': set()
     }
-    revert_message = f"[{current_timestamp.strftime('%Y-%m-%d %H:%M')}] Data reverted to the original state"
+    st.session_state.is_downsampled = False
+    st.session_state.downsampled_df = None
     st.session_state.analysis_history.append(revert_message)
+    # Reset
     if st.session_state.ts_subpage == "Detrend Data":
         st.session_state.detrend_steps = []
         st.session_state.detrending_active = False
@@ -58,6 +64,8 @@ def handle_revert():
         st.session_state.downsample_steps = []
         st.session_state.downsampling_active = False
         st.session_state.show_downsampling_plots = False
+
+
 
 with st.sidebar:
     st.subheader("Time Series Tools")
@@ -146,13 +154,11 @@ if st.session_state.ts_subpage == "Load Data":
         if data is not None:
             with st.expander("Step 2: Process Data", expanded=False):
                 with st.spinner('Processing...'):
+                    st.session_state.show_download_options = True
                     dl = DataLoader(csv=data)
                     df = dl.get_dataframe()
                     if df is not None and not df.empty:
-                        # Update all relevant session states for the new dataset
                         st.session_state.df = df
-                        st.session_state.original_df = df.copy()
-                        st.session_state.detrended_df = df.copy()
                         if is_new_dataset:
                             st.session_state.analysis_history = []
                             st.session_state.detrending_active = False
@@ -192,6 +198,8 @@ elif st.session_state.ts_subpage == "Plot Data":
 
 elif st.session_state.ts_subpage == "Detrend Data":
     from utils.detrending import analyze_detrend
+    from utils.session_state_management import update_session_state  # Add this import
+
     st.title("🧰 Detrend Data")
     with st.expander("**ℹ️How to Use**"):
         st.markdown("""
@@ -206,12 +214,14 @@ elif st.session_state.ts_subpage == "Detrend Data":
         - Review trend statistics and visualization
         - Decide whether to apply detrending
         """)
-    if st.session_state.df is not None:
-        st.session_state.data_info['total_rows'] = len(st.session_state.df)
+
+    if st.session_state.current_df is not None:
+        st.session_state.data_info['total_rows'] = len(st.session_state.current_df)
         try:
-            detrended_df = analyze_detrend(st.session_state.df)
+            detrended_df = analyze_detrend(st.session_state.current_df)
             if detrended_df is not None:
-                st.session_state.df = detrended_df
+                update_session_state(detrended_df, analysis_type='detrend')
+
                 if st.session_state.detrend_steps:
                     st.session_state.current_analysis_type = "detrend"
                     col1, col2 = st.columns([1, 4])
@@ -247,12 +257,12 @@ elif st.session_state.ts_subpage == "Smooth Data":
             - Optionally, revert back to the original data if needed by clicking "Revert to Original Data"
         """)
 
-    if st.session_state.df is not None:
-        st.session_state.data_info['total_rows'] = len(st.session_state.df)
+    if st.session_state.current_df is not None:
+        st.session_state.data_info['total_rows'] = len(st.session_state.current_df)
         try:
-            smoothed_df = analyze_smooth(st.session_state.df)
+            smoothed_df = analyze_smooth(st.session_state.current_df)
             if smoothed_df is not None:
-                st.session_state.df = smoothed_df
+                update_session_state(smoothed_df, analysis_type='smooth')
                 # Option to revert
                 if st.session_state.smoothing_steps:
                     st.session_state.current_analysis_type = "smooth"
@@ -284,7 +294,9 @@ elif st.session_state.ts_subpage == "Downsample Data":
 
     if st.session_state.df is not None:
         st.session_state.current_analysis_type = "downsample"
-        downsampling_page(st.session_state.current_df)
+        downsampled_df = downsampling_page(st.session_state.current_df)
+        if downsampled_df is not None:
+            update_session_state(downsampled_df, analysis_type='downsample')
         if st.button("Revert to Original Data"):
             if st.session_state.original_df is not None:
                 handle_revert()
@@ -338,8 +350,16 @@ elif st.session_state.ts_subpage == "Upload Results":
                         name = generate_filename(analysis_types, widget_key_prefix)
                         prepared_data = prepare_dataframe(data_to_upload)
                         # Preview
-                        st.write("### Preview of Selected Data:")
-                        st.dataframe(prepared_data.head(), use_container_width=True)
+                        st.write("##### Preview of Selected Data:")
+                        preview_df = data_to_upload.head(15)
+                        display_df = preview_df.copy()
+                        numeric_cols = display_df.select_dtypes(include=['float64', 'float32']).columns
+                        for col in numeric_cols:
+                            display_df[col] = display_df[col].apply(
+                                lambda x: f'{float(x):.6f}'.replace(',', '.') if pd.notnull(x) else x)
+                            display_df.index = range(1, len(display_df) + 1)
+                        st.dataframe(display_df, use_container_width=True, height=350)
+
                         # File name and upload button
                         col1, col2 = st.columns([3, 1])
                         with col1:
