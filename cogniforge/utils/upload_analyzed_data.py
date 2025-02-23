@@ -90,21 +90,19 @@ def get_upload_data(widget_key_prefix):
         st.session_state.upload_selection = "Current State (with all analyses)"
 
     options = ["Current State (with all analyses)", "Original Downloaded Data"]
-
     original_data_exists = 'original_df' in st.session_state and not st.session_state.original_df.empty if 'original_df' in st.session_state else False
-    processed_data_exists = 'df' in st.session_state and not st.session_state.df.empty if 'df' in st.session_state else False
+    processed_data_exists = 'current_df' in st.session_state and not st.session_state.current_df.empty if 'current_df' in st.session_state else False
     # if none
     if not original_data_exists and not processed_data_exists:
         st.warning("Please load a dataset first.")
         return None, []
-    # adjust buttonn
+    # adjust button
     if not original_data_exists:
         options.remove("Original Downloaded Data")
-    elif not processed_data_exists:  # Simplified condition
+    elif not processed_data_exists:
         st.session_state.upload_selection = "Original Downloaded Data"
     elif st.session_state.upload_selection not in options:
         st.session_state.upload_selection = options[0]
-
     main_choice = st.radio(
         "Choose data to upload:",
         options,
@@ -112,18 +110,18 @@ def get_upload_data(widget_key_prefix):
         key="upload_data_selection"
     )
     st.session_state.upload_selection = main_choice
-
     if main_choice == "Original Downloaded Data":
         df = st.session_state.original_df.copy()
         st.write(f"Number of observations in original data: {len(df):,}")
-        return df, ["original"]
+        st.write("Available columns:", ", ".join(df.columns))
+        return df, []
 
     elif main_choice == "Current State (with all analyses)":
-        df = st.session_state.df.copy()
-        st.write(f"Number of rows {len(df):,}")
-        return df, ["detrend", "smooth", "downsample"]
+        df = st.session_state.get('full_analyzed_df', st.session_state.current_df).copy()
+        st.write(f"Number of rows: {len(df):,}")
+        st.write("Available columns:", ", ".join(df.columns))
+        return df, []
     return None, []
-
 
 def generate_filename(analysis_types, widget_key_prefix=""):
     """Generate filename based on analysis types"""
