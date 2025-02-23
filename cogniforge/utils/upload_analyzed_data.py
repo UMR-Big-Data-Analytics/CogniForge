@@ -86,7 +86,6 @@ def prepare_dataframe(df):
 
 def get_upload_data(widget_key_prefix):
     """Gets data to upload based on user selection."""
-
     if 'upload_selection' not in st.session_state:
         st.session_state.upload_selection = "Current State (with all analyses)"
 
@@ -103,7 +102,7 @@ def get_upload_data(widget_key_prefix):
         options.remove("Original Downloaded Data")
     elif not processed_data_exists:  # Simplified condition
         st.session_state.upload_selection = "Original Downloaded Data"
-    elif st.session_state.upload_selection not in options: # handle the case where both exist but the previous selection is no longer valid
+    elif st.session_state.upload_selection not in options:
         st.session_state.upload_selection = options[0]
 
     main_choice = st.radio(
