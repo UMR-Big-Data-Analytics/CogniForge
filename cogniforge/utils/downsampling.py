@@ -4,8 +4,7 @@ import lttb
 import streamlit as st
 from datetime import datetime
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from scipy.interpolate import interp1d
+from utils.session_state_management import update_session_state
 
 @st.cache_data
 def initialize_session_state():
@@ -17,6 +16,10 @@ def initialize_session_state():
         st.session_state.current_df = None
     if 'original_df' not in st.session_state:
         st.session_state.original_df = None
+    if 'is_downsampled' not in st.session_state:
+        st.session_state.is_downsampled = False
+    if 'downsampled_df' not in st.session_state:
+        st.session_state.downsampled_df = None
 
 
 def downsample_dataframe(
@@ -29,6 +32,7 @@ def downsample_dataframe(
     if df is None or df.empty:
         st.error("DataFrame is None or empty")
         return None
+
     # Time column
     if time_column is None:
         time_column = next(
@@ -186,11 +190,9 @@ def downsampling_page(df: pd.DataFrame = None) -> pd.DataFrame:
         value=min(1000, len(df)),
         step=100
     )
-
     # Main visualization control
     st.caption("Warning: Plotting a large dataset may take time or affect UI performance.")
     plot_button = st.button("Plot Data", type="primary")
-
     if plot_button:
         numeric_columns = [col for col in df.select_dtypes(include=[np.number]).columns
                            if col != 'Zeit[(s)]']
@@ -212,12 +214,12 @@ def downsampling_page(df: pd.DataFrame = None) -> pd.DataFrame:
                             st.info(f"""
                             Current data points: {len(df):,}
                             Target data points: {max_points:,}
-                            Reduction ratio: {(max_points / len(df) * 100):.1f}%
                             """)
                         with st.expander("📊 Visualization", expanded=True):
                             fig = create_downsampling_plots(
                                 df, column, preview_downsampled_df)
                             st.plotly_chart(fig, use_container_width=True)
+
 
     # Apply Downsampling button
     apply_downsample_button = st.button("Apply Downsampling", type="primary")
@@ -225,7 +227,7 @@ def downsampling_page(df: pd.DataFrame = None) -> pd.DataFrame:
         with st.spinner('Applying downsampling to entire dataset...'):
             downsampled_df = downsample_dataframe(df, max_points=max_points)
             if downsampled_df is not None:
-                st.session_state.current_df = downsampled_df.copy()
+                update_session_state(downsampled_df, analysis_type='downsample')
                 record_downsampling_step(len(df), len(downsampled_df))
                 st.success(
                     f"✅ Downsampling applied successfully! Reduced from {len(df):,} to {len(downsampled_df):,} observations."
@@ -244,5 +246,6 @@ def downsampling_page(df: pd.DataFrame = None) -> pd.DataFrame:
 
                 display_df.index = range(1, len(display_df) + 1)
                 st.dataframe(display_df, use_container_width=True, height=350)
+                return downsampled_df
 
-    return df
+    return st.session_state.current_df
