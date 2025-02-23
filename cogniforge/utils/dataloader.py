@@ -78,25 +78,13 @@ class DataLoader:
         filename = getattr(self.csv, 'name', 'Unknown Dataset')
         if (st.session_state.current_dataset_name is None or
                 st.session_state.current_dataset_name == filename):
-            st.session_state.show_download_options = True
             return True
-
-        current_df_exists = (
-                st.session_state.get('current_df') is not None and
-                not st.session_state.current_df.empty
-        )
-
-        if (current_df_exists and
+        if (st.session_state.get('current_df') is not None and
                 (st.session_state.get('detrending_active') or
-                 st.session_state.get('smoothing_active') or
-                 st.session_state.get('downsampling_active'))):
-            st.warning("⚠️ Loading new data will clear all existing analyses (including downsampling).")
+                 st.session_state.get('smoothing_active')) or
+                st.session_state.get('downsampling_active')):
+            st.warning("⚠️ Loading new data will clear all existing analyses.")
             proceed = st.button("Proceed with new data")
-            if proceed:
-                st.session_state.show_download_options = True
-                st.session_state.detrending_active = False
-                st.session_state.smoothing_active = False
-                st.session_state.downsampling_active = False
             return proceed
         return True
 
@@ -153,7 +141,6 @@ class DataLoader:
         st.dataframe(preview_df, use_container_width=True, height=350)
 
 
-
     def _read_csv(self) -> pd.DataFrame:
         """Reads and processes the CSV file"""
         self.csv.seek(0)
@@ -200,7 +187,6 @@ class DataLoader:
         end = min(start + page_size, total_rows)
 
         if not st.session_state.use_full_dataset:
-            # Calculate the actual row numbers relative to the original file
             base_row = self.header + self.skiprows
             adjusted_start = base_row + start
             adjusted_end = base_row + end - 1
@@ -253,7 +239,6 @@ class DataLoader:
                 else:
                     st.warning("No data was processed. Please check your parameters and try again.")
                     return False
-
         except Exception as e:
             st.error(f"Data processing error: {str(e)}")
             return False
