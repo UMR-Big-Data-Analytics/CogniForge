@@ -123,21 +123,22 @@ def get_upload_data(widget_key_prefix):
         return df, []
     return None, []
 
+
 def generate_filename(analysis_types, widget_key_prefix=""):
-    """Generate filename based on analysis types"""
+    """Generate filename based on analysis types and selected data source"""
     original_filename = st.session_state.get('original_filename', "Unknown")
     base_filename = original_filename.rsplit('.', 1)[0]
-    # get file name
-    if not analysis_types:
+    data_source = st.session_state.upload_selection
+    if data_source == "Original Downloaded Data":
         suffix = "original"
-    else:
+    elif data_source == "Current State (with all analyses)":
         suffix = "analysed"
-
+    else:
+        suffix = "data"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     generated_filename = f"{base_filename}_{suffix}_{timestamp}.csv"
     st.text(f"Upload filename: {generated_filename}")
     return generated_filename
-
 
 def upload_data():
     """Wrapper function for upload process"""

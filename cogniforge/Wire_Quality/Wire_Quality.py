@@ -13,16 +13,20 @@ st.write(
     "Welcome to the Wire Quality tool. Here you can analyze and visualize the quality of your wire."
 )
 
-# use data loaded
-if 'df' not in st.session_state or st.session_state.df is None or st.session_state.df.empty:
-    st.warning("Please load data first in the Load Data section.")
-else:
-    df = st.session_state.df
 
+if 'current_df' in st.session_state and st.session_state.current_df is not None:
+    df = st.session_state.current_df.copy()
+else:
+    df = None
+
+if df is None:
+    st.error("Please load data first using the Load Data Page.")
+else:
     st.write("### Current Dataset")
     st.write(f"Dataset: {st.session_state.get('original_filename', 'Unknown')}")
     st.write(f"Total rows: {len(df):,}")
 
+    # Plot Data Expander
     with st.expander("Plot Data"):
         try:
             if button("Plot data", "plot_data_wire", True):
@@ -30,8 +34,9 @@ else:
         except Exception as e:
             st.error(f"Error plotting data: {str(e)}")
 
+    # Spucker Analysis Expander
     with st.expander("Spucker Analysis"):
-        if st.session_state.df is not None:
-            analyze_spucker(st.session_state.df)
+        if df is not None:
+            analyze_spucker(df)
         else:
             st.warning("Please load and process data first.")

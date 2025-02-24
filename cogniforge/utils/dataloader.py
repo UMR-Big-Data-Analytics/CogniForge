@@ -50,6 +50,7 @@ class DataLoader:
         if 'show_download_options' not in st.session_state:
             st.session_state.show_download_options = False
 
+
     def reset_state(self):
         """Reset the state when switching dataset modes."""
         total_rows = st.session_state.total_rows
@@ -83,9 +84,8 @@ class DataLoader:
                 (st.session_state.get('detrending_active') or
                  st.session_state.get('smoothing_active')) or
                 st.session_state.get('downsampling_active')):
-            st.warning("⚠️ Loading new data will clear all existing analyses.")
-            proceed = st.button("Proceed with new data")
-            return proceed
+            st.warning("⚠️ Please clear current data before loading a new dataset.")
+            return False
         return True
 
     def _show_current_dataset_info(self):
@@ -245,18 +245,22 @@ class DataLoader:
         try:
             filename = getattr(self.csv, 'name', 'Unknown Dataset')
 
+            # Check if the dataset has changed and whether the user confirmed loading new data
             if st.session_state.current_dataset_name != filename:
                 st.info(f"New dataset detected: {filename}")
+
                 if not self._check_for_existing_analysis():
-                    return None
+                    return None  # Wait for user confirmation to proceed
 
                 if st.session_state.show_download_options:
+                    # Reset states for the new dataset
                     st.session_state.total_rows = self._get_total_rows()
                     self.reset_state()
                     st.session_state.current_dataset_name = filename
                 else:
-                    return None
+                    return None  # Don't show options if 'Proceed' was not clicked
 
+            # If new dataset was selected, allow the user to set parameters
             if (not st.session_state.get('parameters_set', False) and
                     st.session_state.show_download_options):
                 self._preview()

@@ -32,14 +32,22 @@ def initialize_session_state():
     if 'smoothing_stats' not in st.session_state:
         st.session_state.smoothing_stats = {}
 
+
 def calculate_column_volatility(column_data: np.ndarray) -> float:
-    """Calculate volatility for a given column."""
+    """Calculate volatility for a given column with more aggressive smoothing."""
     changes_between_points = np.diff(column_data)
     spread_of_changes = np.std(changes_between_points)
     spread_of_data = np.std(column_data)
     volatility = spread_of_changes / spread_of_data
-    return max(0.1, min(0.9, 1 - volatility))
+    base_alpha = max(0.02, min(0.2, 0.5 - volatility))
+    # Adjust based on outliers
+    z_scores = np.abs(stats.zscore(column_data))
+    outlier_ratio = np.mean(z_scores > 2.5)
+    # more smoothing
+    if outlier_ratio > 0.02:
+        base_alpha *= 0.6
 
+    return base_alpha
 
 def check_smoothing_need(data: np.ndarray) -> bool:
         """Determine if smoothing is need
@@ -53,7 +61,7 @@ def check_smoothing_need(data: np.ndarray) -> bool:
         rolling_std = pd.Series(data).rolling(window=window).std()
         overall_std = np.std(data)
         z_scores = np.abs(stats.zscore(data))
-        outlier_ratio = np.mean(z_scores > 3)
+        outlier_ratio = np.mean(z_scores >3.5)
         local_changes = np.abs(np.diff(data))
         signal_mean = np.mean(np.abs(data))
         test_alpha = 0.5
@@ -61,9 +69,9 @@ def check_smoothing_need(data: np.ndarray) -> bool:
         test_smoothed = exponential_smoothing(data, test_alpha)
         test_stats = calculate_smoothing_statistics(data, test_smoothed)
         noise_indicators = [
-            rolling_std.mean() > 0.05 ** overall_std,
-            outlier_ratio > 0.03 > 0.03,
-            local_changes.mean() > 0.075 * signal_mean
+            rolling_std.mean() > 0.03 ** overall_std,
+            outlier_ratio > 0.02,
+            local_changes.mean() > 0.05 * signal_mean
         ]
         return any(noise_indicators) and calculate_smoothing_statistics(
             data, exponential_smoothing(data, 0.5)
@@ -71,18 +79,19 @@ def check_smoothing_need(data: np.ndarray) -> bool:
 
 
 # Weighted moving average
-def exponential_smoothing(data: np.ndarray, alpha: float) -> np.ndarray:
-    """Apply exponential smoothing to the input data. """
+def exponential_smoothing(data: np.ndarray, alpha: float, iterations: int = 1) -> np.ndarray:
+    """Apply exponential smoothing with optional multiple passes."""
     smoothed = np.zeros(len(data))
     smoothed[0] = data[0]
     mask = np.isnan(data)
-    clean_data = np.where(mask, smoothed[0], data)
-
-    for t in range(1, len(data)):
-        if mask[t]:
-            smoothed[t] = smoothed[t - 1]
-        else:
-            smoothed[t] = alpha * clean_data[t] + (1 - alpha) * smoothed[t - 1]
+    current_data = np.where(mask, smoothed[0], data)
+    for _ in range(iterations):
+        for t in range(1, len(data)):
+            if mask[t]:
+                smoothed[t] = smoothed[t - 1]
+            else:
+                smoothed[t] = alpha * current_data[t] + (1 - alpha) * smoothed[t - 1]
+        current_data = smoothed.copy()
     return smoothed
 
 def calculate_smoothing_statistics(original_data: np.ndarray, smoothed_data: np.ndarray) -> Dict[str, float]:
