@@ -111,10 +111,12 @@ def create_downsampling_plots(original_df, column, downsampled_df=None, title="D
     plot before and after
     """
     # Get timestamps and data
-    original_timestamps = original_df['Zeit[(s)]'].values
+    time_col = [col for col in original_df.columns if 'Zeit' in col][0]
+    original_timestamps = original_df[time_col].values
     if downsampled_df is None:
         return None
-    downsampled_timestamps = downsampled_df['Zeit[(s)]'].values
+    downsampled_timestamps = downsampled_df[time_col].values
+    time_unit = "seconds" if "Zeit[(s)]" in time_col else "milliseconds"
     # Get the data values
     original_values = original_df[column].values
     downsampled_values = downsampled_df[column].values
@@ -155,7 +157,7 @@ def create_downsampling_plots(original_df, column, downsampled_df=None, title="D
         selectdirection='h',
 
         # X-axis configurations
-        xaxis=dict(title="Time (seconds)", rangeslider=dict(visible=True), showspikes=True, spikecolor='gray'),
+        xaxis=dict(title=f"Time ({time_unit})", rangeslider=dict(visible=True), showspikes=True, spikecolor='gray'),
         yaxis=dict(title="Value", showspikes=True, spikecolor='gray'),
         legend=dict(orientation="h", yanchor="bottom", y=-0.7, xanchor="center", x=0.5))
     fig.update_layout(hovermode='x unified')
@@ -183,12 +185,11 @@ def downsampling_page(df: pd.DataFrame = None) -> pd.DataFrame:
                 st.write(message)
 
     # Configure downsampling parameters
-    max_points = st.slider(
+    max_points = st.number_input(
         "Sample size",
-        min_value=10,
-        max_value=min(5000, len(df)),
-        value=min(1000, len(df)),
-        step=100
+        min_value=100,
+        max_value=len(df),
+        value=min(1000, len(df))
     )
     # Main visualization control
     st.caption("Warning: Plotting a large dataset may take time or affect UI performance.")

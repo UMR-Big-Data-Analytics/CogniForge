@@ -198,9 +198,9 @@ def analyze_smooth(df: pd.DataFrame = None) -> pd.DataFrame:
             for message in st.session_state.analysis_history:
                 st.write(message)
 
+    time_col = [col for col in df.columns if 'Zeit' in col][0]
+    timestamps = df[time_col].values
 
-
-    timestamps = df['Zeit[(s)]'].values
     chosen_columns = st.multiselect("Choose columns to analyze", options=df.columns[1:])
     if not chosen_columns:
         st.info("Please choose at least one column to smooth.")

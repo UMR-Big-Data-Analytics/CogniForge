@@ -172,8 +172,6 @@ if st.session_state.ts_subpage == "Load Data":
         st.error(f"An error occurred: {e}")
 
 
-
-
 elif st.session_state.ts_subpage == "Plot Data":
     from utils.plotting import plot_sampled
     st.title("📊 Plot Data")
@@ -277,7 +275,7 @@ elif st.session_state.ts_subpage == "Smooth Data":
         st.warning("Please load and process data first in the Load Data section.")
 
 elif st.session_state.ts_subpage == "Downsample Data":
-    st.title("🧰 Data Downsampling Preview")
+    st.title("🧰 Data Downsampling")
     with st.expander("ℹ️ **How to use**"):
         st.markdown("""
                    **This tool helps you:**

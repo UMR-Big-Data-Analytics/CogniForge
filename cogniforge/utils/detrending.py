@@ -30,8 +30,10 @@ def initialize_session_state():
         st.session_state.show_plots = False
 
 
-def detect_trend(data: np.ndarray, timestamps: np.ndarray) -> dict:
+def detect_trend(data: np.ndarray, df: pd.DataFrame) -> dict:
     """Detect trends using statistical tests."""
+    time_col = [col for col in df.columns if 'Zeit' in col][0]
+    timestamps = df[time_col].values
     # Linear regression
     slope, intercept, r_value, p_value, std_err = stats.linregress(timestamps, data)
     r_squared = r_value ** 2
@@ -65,8 +67,11 @@ def recommend_detrend_method(data, df):
             return {"method": "Linear"}
 
 
-def create_trend_plots(data, timestamps, trend=None, detrended=None, title="", method=None, params=None):
+def create_trend_plots(data, df, trend=None, detrended=None, title="", method=None, params=None):
     """ before and after detreding"""
+    time_col = [col for col in df.columns if 'Zeit' in col][0]
+    timestamps = df[time_col].values
+    time_unit = "seconds" if "Zeit[(s)]" in time_col else "milliseconds"
     # Title
     if method:
         if method == "Moving Average":
@@ -103,7 +108,7 @@ def create_trend_plots(data, timestamps, trend=None, detrended=None, title="", m
                        mode='lines', line=dict(color='orange')),
             row=2, col=1
         )
-    fig.update_xaxes(title_text="Time (s)")
+    fig.update_xaxes(title_text=f"Time ({time_unit})")
     fig.update_yaxes(title_text="Value")
 
     # Configure plot
@@ -186,7 +191,8 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
         st.info("Please choose at least one column to analyze.")
         return df
 
-    timestamps = df['Zeit[(s)]'].values
+    time_col = [col for col in df.columns if 'Zeit' in col][0]
+    timestamps = df[time_col].values
     needs_detrending = {}
 
     # tabs for each chosen column
@@ -195,7 +201,7 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
         with tab:
             st.write(f"### Analysis for {chosen_column}")
             data = df[chosen_column].astype(float).values
-            trend_stats = detect_trend(data, timestamps)
+            trend_stats = detect_trend(data, df)
             if trend_stats['needs_detrending']:
                 st.warning(f"⚠️ Trend detected - {trend_stats['direction']} - Detrending recommended")
                 needs_detrending[chosen_column] = True
@@ -295,7 +301,7 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
                     else:
                         plot_title = f"Original Data for {chosen_column}"
 
-                    fig = create_trend_plots(data, timestamps, trend, detrended, plot_title,
+                    fig = create_trend_plots(data, df, trend, detrended, plot_title,
                                              method=detrend_method, params=params)
                     st.plotly_chart(fig, use_container_width=True)
 
@@ -319,7 +325,7 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
     # Dataset Preview
     st.write("### Dataset Preview")
     preview_df = st.session_state.current_df.copy()
-    display_df = preview_df.copy()
+    display_df = preview_df.copy().head(15)
     numeric_cols = display_df.select_dtypes(include=['float64', 'float32']).columns
     for col in numeric_cols:
         display_df[col] = display_df[col].apply(

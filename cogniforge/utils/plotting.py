@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
+
 def plot_sampled(df: pd.DataFrame):
     if df is None:
         df = st.session_state.current_df.copy() if 'current_df' in st.session_state and st.session_state.current_df is not None else None
@@ -17,7 +18,18 @@ def plot_sampled(df: pd.DataFrame):
     st.markdown(f"**Dataset Name:** {dataset_name}")
     st.write(f"Using a dataset with {len(st.session_state.current_df):,} rows")
 
-    columns = [col for col in df.columns if col != 'Zeit[(s)]']
+    # Find the time column (contains 'Zeit')
+    time_column = None
+    for col in df.columns:
+        if 'Zeit' in col:
+            time_column = col
+            break
+
+    if time_column is None:
+        st.error("No column containing 'Zeit' found for time series data.")
+        return
+
+    columns = [col for col in df.columns if col != time_column]
     chosen_columns = st.multiselect("Choose columns", columns)
 
     if len(chosen_columns) == 0:
@@ -35,7 +47,7 @@ def plot_sampled(df: pd.DataFrame):
 
         fig.add_trace(
             go.Scatter(
-                x=plot_df['Zeit[(s)]'],
+                x=plot_df[time_column],
                 y=y_data,
                 name=f"{col} ({'Normalized' if normalize else 'Original'})",
                 mode='lines'
@@ -45,12 +57,12 @@ def plot_sampled(df: pd.DataFrame):
     fig.update_layout(
         height=500,
         title_text=f"Time Series Plot ({'Normalized' if normalize else 'Original'})",
-        xaxis_title="Time (seconds)",
+        xaxis_title="Time (seconds)" if 'Zeit[(s)]' in time_column else "Time (milliseconds)",
         yaxis_title="Normalized Values" if normalize else "Original Values",
         showlegend=True,
         dragmode='zoom',
         xaxis=dict(rangeslider=dict(visible=True)),
-        legend = dict(
+        legend=dict(
             orientation="h",
             y=1.0,
             xanchor="center",
@@ -59,4 +71,3 @@ def plot_sampled(df: pd.DataFrame):
     )
 
     st.plotly_chart(fig, use_container_width=True)
-
