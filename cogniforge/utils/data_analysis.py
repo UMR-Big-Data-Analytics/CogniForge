@@ -1,3 +1,4 @@
+import pandas as pd
 import streamlit as st
 from utils.state_button import button
 from algorithms.anomaly_detection import SpuckerCounter
@@ -19,8 +20,10 @@ def analyze_spucker(df):
     st.write("## Spucker Count")
 
     column = st.selectbox("Select column", df.columns)
+    df[column] = pd.to_numeric(df[column], errors='coerce')
     column_idx = df.columns.get_loc(column)
-    threshold = st.slider("Threshold", 0.0, df.iloc[:, column_idx].max(), 70.0)
+    threshold = st.slider("Threshold", 0.0, float(df.iloc[:, column_idx].max()), 70.0)
+
 
     index_range = st.slider(
         "Select range for Spucker count",
