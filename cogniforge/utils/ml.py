@@ -12,10 +12,11 @@ from utils.furthr import download_item_bytes, hash_furthr_item
 def load_model(model_file):
     model_bytes, _ = download_item_bytes(model_file)
 
-    with tempfile.NamedTemporaryFile(suffix=".keras") as fh:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".keras") as fh:
         fh.write(model_bytes.getvalue())
-        os.fsync(fh)
+        fh.close()
         model = tf.keras.models.load_model(fh.name)
+        os.remove(fh.name)
     return model
 
 
