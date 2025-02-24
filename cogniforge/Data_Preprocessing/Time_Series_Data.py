@@ -51,6 +51,7 @@ def handle_revert():
     }
     st.session_state.is_downsampled = False
     st.session_state.downsampled_df = None
+    revert_message = f"[{current_timestamp.strftime('%Y-%m-%d %H:%M')}] Reverted to original dataset"
     st.session_state.analysis_history.append(revert_message)
     # Reset
     if st.session_state.ts_subpage == "Detrend Data":
@@ -101,6 +102,7 @@ if st.session_state.ts_subpage == "Overview":
 # Configure each subpage
 if st.session_state.ts_subpage == "Load Data":
     st.title("📥 Load Data")
+
     if st.session_state.df is not None:
         info_message = ["📊 Current Dataset Information:"]
         if 'original_filename' in st.session_state:
@@ -114,6 +116,8 @@ if st.session_state.ts_subpage == "Load Data":
             info_message.append("• Active detrending analysis in progress")
         if st.session_state.smoothing_active:
             info_message.append("• Active smoothing analysis in progress")
+        if st.session_state.downsampling_active:
+            info_message.append("• Active downsampling analysis in progress")
 
         col1, col2 = st.columns([3, 1])
         with col1:
@@ -121,7 +125,7 @@ if st.session_state.ts_subpage == "Load Data":
         with col2:
             if st.button("Clear Current Data", type="primary"):
                 keys_to_clear = [
-                    'df', 'original_df', 'detrending_active', 'smoothing_active',
+                    'df', 'original_df', 'detrending_active', 'smoothing_active', 'downsampling_active',
                     'analysis_history', 'original_filename', 'current_dataset_name',
                     'detrend_steps', 'smoothing_steps', 'current_analysis_type'
                 ]
@@ -130,46 +134,44 @@ if st.session_state.ts_subpage == "Load Data":
                         del st.session_state[key]
                 st.rerun()
 
-    st.write("Download your data from the [FURTHRmind](https://furthr.informatik.uni-marburg.de/) database.")
-    try:
-        from utils.dataloader import DataLoader
-        from utils.furthr import FURTHRmind
-        data = None
-        with st.expander("Step 1: Download Data", expanded=True):
-            with st.spinner('Downloading data...'):
-                data, filename = FURTHRmind().download_csv() or (None, None)
-                if data is not None:
-                    is_new_dataset = ('original_filename' in st.session_state and
-                                      st.session_state.original_filename != filename)
-                    has_active_analysis = (st.session_state.get('detrending_active', False) or
-                                           st.session_state.get('smoothing_active', False))
+    # Show data download section
+    if st.session_state.df is None:
+        st.write("Download your data from the [FURTHRmind](https://furthr.informatik.uni-marburg.de/) database.")
+        try:
+            from utils.dataloader import DataLoader
+            from utils.furthr import FURTHRmind
 
-                    if is_new_dataset:
-                        st.info(f"New dataset selected: {filename}")
+            data = None
+            with st.expander("Step 1: Download Data", expanded=True):
+                with st.spinner('Downloading data...'):
+                    data, filename = FURTHRmind().download_csv() or (None, None)
+                    if data is not None:
+                        is_new_dataset = ('original_filename' in st.session_state and
+                                          st.session_state.original_filename != filename)
+                        st.session_state.original_filename = filename
+                        data.name = filename
+                        st.success("Data downloaded!")
 
-                    st.session_state.original_filename = filename
-                    data.name = filename
-                    st.success("Data downloaded!")
-
-        if data is not None:
-            with st.expander("Step 2: Process Data", expanded=False):
-                with st.spinner('Processing...'):
-                    st.session_state.show_download_options = True
-                    dl = DataLoader(csv=data)
-                    df = dl.get_dataframe()
-                    if df is not None and not df.empty:
-                        st.session_state.df = df
-                        if is_new_dataset:
-                            st.session_state.analysis_history = []
-                            st.session_state.detrending_active = False
-                            st.session_state.smoothing_active = False
-                            st.session_state.detrend_steps = []
-                            st.session_state.smoothing_steps = []
-                            st.session_state.show_plots = False
-    except ImportError as e:
-        st.error(f"Import error: {e}. Please ensure that the `cogniforge` package is correctly installed.")
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
+            if data is not None:
+                with st.expander("Step 2: Process Data", expanded=False):
+                    with st.spinner('Processing...'):
+                        st.session_state.show_download_options = True
+                        dl = DataLoader(csv=data)
+                        df = dl.get_dataframe()
+                        if df is not None and not df.empty:
+                            st.session_state.df = df
+                            if is_new_dataset:
+                                st.session_state.analysis_history = []
+                                st.session_state.detrending_active = False
+                                st.session_state.smoothing_active = False
+                                st.session_state.downsampling_active = False
+                                st.session_state.detrend_steps = []
+                                st.session_state.smoothing_steps = []
+                                st.session_state.show_plots = False
+        except ImportError as e:
+            st.error(f"Import error: {e}. Please ensure that the `cogniforge` package is correctly installed.")
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
 
 
 elif st.session_state.ts_subpage == "Plot Data":
