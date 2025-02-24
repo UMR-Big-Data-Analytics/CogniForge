@@ -3,18 +3,18 @@ from io import BytesIO, StringIO
 import requests
 
 
+# reuse TCP connections
+session = requests.Session()
+
+
 @st.cache_data
 def get_as_string(
-    url: str, headers: dict, _chunk_size: int = 8192000
+    url: str, headers: dict
 ) -> StringIO | requests.Response:
     """Get a string via HTTP."""
-    response = requests.get(url, headers=headers)
+    response = session.get(url, headers=headers)
     if response.ok:
-        bytes = b""
-        for chunk in response.iter_content(chunk_size=_chunk_size):
-            if chunk:
-                bytes += chunk
-        return StringIO(bytes.decode("latin"))
+        return StringIO(response.content.decode("latin"))
     else:
         return response
 
@@ -24,7 +24,8 @@ def get_as_bytes(
     url: str, headers: dict
 ) -> BytesIO | requests.Response:
     """Get raw bytes via HTTP."""
-    response = requests.get(url, headers=headers)
+    response = session.get(url, headers=headers)
+    print(response.raw.version)
     if response.ok:
         return BytesIO(response.content)
     else:
