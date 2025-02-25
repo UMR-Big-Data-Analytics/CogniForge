@@ -30,10 +30,8 @@ def initialize_session_state():
         st.session_state.show_plots = False
 
 
-def detect_trend(data: np.ndarray, df: pd.DataFrame) -> dict:
+def detect_trend(data: np.ndarray, timestamps: np.ndarray) -> dict:
     """Detect trends using statistical tests."""
-    time_col = [col for col in df.columns if 'Zeit' in col][0]
-    timestamps = df[time_col].values
     # Linear regression
     slope, intercept, r_value, p_value, std_err = stats.linregress(timestamps, data)
     r_squared = r_value ** 2
@@ -51,21 +49,20 @@ def detect_trend(data: np.ndarray, df: pd.DataFrame) -> dict:
     }
     return stats_dict
 
-def recommend_detrend_method(data, df):
-    timestamps = df['Zeit[(s)]'].values
+
+def recommend_detrend_method(data, timestamps):
+    # Autocorrelation: check how similar a time series at time t is similar to it at t-1
+    # It tells basically if past value can predict future values.
+    autocorrelation = np.corrcoef(data[:-1], data[1:])[0, 1]
     trend_stats = detect_trend(data, timestamps)
     if trend_stats['r_squared'] > 0.8:
         return {"method": "Linear"}
     else:
-        #autocorrelation: check how similar a time series at time t is similar to it at t-1
-        # it tells basically if past value can predict future values.
-        autocorrelation = np.corrcoef(data[:-1], data[1:])[0, 1]
-        # current threshold = 0.5. Change if needed
+        # Current threshold = 0.5. Change if needed
         if abs(autocorrelation) > 0.5:
             return {"method": "Moving Average"}
         else:
             return {"method": "Linear"}
-
 
 def create_trend_plots(data, df, trend=None, detrended=None, title="", method=None, params=None):
     """ before and after detreding"""
@@ -201,12 +198,12 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
         with tab:
             st.write(f"### Analysis for {chosen_column}")
             data = df[chosen_column].astype(float).values
-            trend_stats = detect_trend(data, df)
+            trend_stats = detect_trend(data, timestamps)
             if trend_stats['needs_detrending']:
                 st.warning(f"⚠️ Trend detected - {trend_stats['direction']} - Detrending recommended")
                 needs_detrending[chosen_column] = True
                 # Recommendation
-                recommendation = recommend_detrend_method(data, df)
+                recommendation = recommend_detrend_method(data, timestamps)
                 detrend_method = st.selectbox(
                     "Choose detrending method",
                     options=["Linear", "Moving Average"],

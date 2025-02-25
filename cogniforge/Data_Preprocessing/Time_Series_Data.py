@@ -29,6 +29,8 @@ if 'detrending_active' not in st.session_state:
     st.session_state.detrending_active = False
 if 'smoothing_active' not in st.session_state:
     st.session_state.smoothing_active = False
+if 'plotting_active' not in st.session_state:
+    st.session_state.plotting_active = False
 if 'data_info' not in st.session_state:
     st.session_state.data_info = {
         'use_full_dataset': True,
@@ -95,39 +97,45 @@ if st.session_state.ts_subpage == "Overview":
            - **Load Data**: Download and process data from FURTHRmind database
            - **Plot Data**: Visualize data        
            - **Detrend Data**: Perform detrending on the data
-           - **Smooth Data**: Smooth noisy data using moving average
+           - **Smooth Data**: Smooth noisy data using exponential smoothing
+           - **Downsample Data**: Reduce data size while preserving all the important patterns and features           
            - **Upload Results**: Save your analyzed data back to FURTHRmind
            """)
 
 # Configure each subpage
 if st.session_state.ts_subpage == "Load Data":
     st.title("📥 Load Data")
-
     if st.session_state.df is not None:
         info_message = ["📊 Current Dataset Information:"]
         if 'original_filename' in st.session_state:
             info_message.append(f"• Current dataset: {st.session_state.original_filename}")
-        if st.session_state.use_full_dataset:
-            info_message.append(f"• Using complete dataset ({len(st.session_state.df):,} rows)")
+        latest_df = st.session_state.get("current_df", st.session_state.df)
+        if st.session_state.get("use_full_dataset", False):
+            info_message.append(f"• Using complete dataset ({len(latest_df):,} rows)")
         else:
-            info_message.append(f"• Using selected range ({len(st.session_state.df):,} rows)")
+            info_message.append(f"• Using selected range ({len(latest_df):,} rows)")
 
+        last_analysis = None
         if st.session_state.detrending_active:
-            info_message.append("• Active detrending analysis in progress")
-        if st.session_state.smoothing_active:
-            info_message.append("• Active smoothing analysis in progress")
-        if st.session_state.downsampling_active:
-            info_message.append("• Active downsampling analysis in progress")
+            last_analysis = "Detrending"
+        elif st.session_state.smoothing_active:
+            last_analysis = "Smoothing"
+        elif st.session_state.downsampling_active:
+            last_analysis = "Downsampling"
+        if last_analysis:
+            info_message.append(f"• Last analysis visited: {last_analysis}")
 
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.info('\n'.join(info_message))
+            st.markdown(f'<div style="border: 2px solid #f1f1f1; padding: 10px; background-color: #f5f5f5;">'
+                        f'{"<br>".join(info_message)}</div>', unsafe_allow_html=True)
         with col2:
             if st.button("Clear Current Data", type="primary"):
                 keys_to_clear = [
                     'df', 'original_df', 'detrending_active', 'smoothing_active', 'downsampling_active',
                     'analysis_history', 'original_filename', 'current_dataset_name',
-                    'detrend_steps', 'smoothing_steps', 'current_analysis_type'
+                    'detrend_steps', 'smoothing_steps', 'current_analysis_type', 'processing_complete',
+                    'plotting_active'
                 ]
                 for key in keys_to_clear:
                     if key in st.session_state:
@@ -144,10 +152,10 @@ if st.session_state.ts_subpage == "Load Data":
             data = None
             with st.expander("Step 1: Download Data", expanded=True):
                 with st.spinner('Downloading data...'):
-                    data, filename = FURTHRmind().download_csv() or (None, None)
+                    data, filename = FURTHRmind().download_csv()
                     if data is not None:
                         is_new_dataset = ('original_filename' in st.session_state and
-                                          st.session_state.original_filename != filename)
+                                         st.session_state.original_filename != filename)
                         st.session_state.original_filename = filename
                         data.name = filename
                         st.success("Data downloaded!")
@@ -160,6 +168,7 @@ if st.session_state.ts_subpage == "Load Data":
                         df = dl.get_dataframe()
                         if df is not None and not df.empty:
                             st.session_state.df = df
+                            st.session_state.processing_complete = True
                             if is_new_dataset:
                                 st.session_state.analysis_history = []
                                 st.session_state.detrending_active = False
@@ -190,8 +199,8 @@ elif st.session_state.ts_subpage == "Plot Data":
         - Optionally, choose to normalize the data to scale values between 0 and 1
         - Use the interactive chart to zoom in and explore the data more closely
         """)
-    if st.session_state.df is not None:
-        plot_sampled(st.session_state.df)
+    if st.session_state.current_df is not None:
+        plot_sampled(st.session_state.current_df)
     else:
         st.warning("Please load and process data first in the Load Data section.")
 

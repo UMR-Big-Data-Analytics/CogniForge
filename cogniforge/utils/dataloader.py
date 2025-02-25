@@ -77,16 +77,15 @@ class DataLoader:
     def _check_for_existing_analysis(self):
         """Check if there's existing analysis when changing datasets."""
         filename = getattr(self.csv, 'name', 'Unknown Dataset')
-        if (st.session_state.current_dataset_name is None or
-                st.session_state.current_dataset_name == filename):
+        is_same_file = (st.session_state.current_dataset_name is None or
+                        st.session_state.current_dataset_name == filename)
+        if is_same_file or not any([
+            st.session_state.get('detrending_active'),
+            st.session_state.get('smoothing_active'),
+            st.session_state.get('downsampling_active')
+        ]):
             return True
-        if (st.session_state.get('current_df') is not None and
-                (st.session_state.get('detrending_active') or
-                 st.session_state.get('smoothing_active')) or
-                st.session_state.get('downsampling_active')):
-            st.warning("⚠️ Please clear current data before loading a new dataset.")
-            return False
-        return True
+        return False
 
     def _show_current_dataset_info(self):
         """Shows information about the currently loaded dataset and any active analyses"""
@@ -105,11 +104,18 @@ class DataLoader:
             return warning_message
 
     def _get_total_rows(self) -> int:
-        """Returns the total number of rows in the CSV file."""
+        """Returns the total number of data rows in the CSV file (excluding headers)."""
         try:
             self.csv.seek(0)
-            df = pd.read_csv(self.csv, sep=self.delimiter, encoding="latin1", header=None)
-            return len(df)
+            total_file_rows = sum(1 for _ in self.csv)
+            self.csv.seek(0)
+            first_row = pd.read_csv(self.csv, sep=self.delimiter, nrows=1, encoding="latin1")
+            self.csv.seek(0)
+            has_combined_headers = '[' in str(first_row.columns[0])
+            header_rows = 1 if has_combined_headers else 2 # measurement may be in the second row
+
+            data_rows = max(0, total_file_rows - header_rows)
+            return data_rows
         except Exception as e:
             st.error(f"Error counting rows: {str(e)}")
             return 0
@@ -140,30 +146,69 @@ class DataLoader:
         preview_df.index = range(1, len(preview_df) + 1)
         st.dataframe(preview_df, use_container_width=True, height=350)
 
-
     def _read_csv(self) -> pd.DataFrame:
         """Reads and processes the CSV file"""
         self.csv.seek(0)
         try:
-            first_row = pd.read_csv(self.csv, sep=self.delimiter, nrows=1, encoding="latin1")
+            # Check if file is empty or only contains blank lines
+            content = self.csv.read()
             self.csv.seek(0)
-            has_combined_headers = '[' in str(first_row.columns[0])
-            header = 0 if has_combined_headers else [0, 1]
-            df = pd.read_csv(
-                self.csv,
-                sep=self.delimiter,
-                decimal=",",
-                header=header,
-                encoding="latin1",
-                low_memory=False,
-                thousands=".",
-                skip_blank_lines=self.skip_blank_lines
-            )
+            if not content.strip():
+                st.error("The file appears to be empty or contains only blank lines.")
+                return None
+            lines = content.splitlines()
+            blank_lines = [line for line in lines if not line.strip()]
+            blank_line_count = len(blank_lines)
+            if blank_line_count > 0:
+                st.info(
+                    f"File contains {blank_line_count} blank line(s).")
+            # Filter out empty lines
+            if not self.skip_blank_lines:
+                lines = content.splitlines()
+                non_empty_lines = [line for line in lines if line.strip()]
+                if not non_empty_lines:
+                    st.error("The file contains only empty rows.")
+                    return None
+                filtered_content = StringIO('\n'.join(non_empty_lines))
+                first_row = pd.read_csv(filtered_content, sep=self.delimiter, nrows=1, encoding="latin1")
+                filtered_content.seek(0)
+                has_combined_headers = '[' in str(first_row.columns[0])
+                header = 0 if has_combined_headers else [0, 1]
+
+                df = pd.read_csv(
+                    filtered_content,
+                    sep=self.delimiter,
+                    decimal=",",
+                    header=header,
+                    encoding="latin1",
+                    low_memory=False,
+                    thousands=".",
+                    skip_blank_lines=True
+                )
+            else:
+                first_row = pd.read_csv(self.csv, sep=self.delimiter, nrows=1, encoding="latin1")
+                self.csv.seek(0)
+                has_combined_headers = '[' in str(first_row.columns[0])
+                header = 0 if has_combined_headers else [0, 1]
+
+                df = pd.read_csv(
+                    self.csv,
+                    sep=self.delimiter,
+                    decimal=",",
+                    header=header,
+                    encoding="latin1",
+                    low_memory=False,
+                    thousands=".",
+                    skip_blank_lines=self.skip_blank_lines
+                )
             if not has_combined_headers:
                 df.columns = [f"{col[0]}[{col[1]}]" if pd.notna(col[1]) else col[0] for col in df.columns]
+
             if not st.session_state.use_full_dataset:
                 df = df.iloc[self.header + self.skiprows - 1: self.end_row - 1]
+
             return df
+
         except Exception as e:
             st.error(f"CSV reading error: {str(e)}")
             return None
@@ -204,16 +249,20 @@ class DataLoader:
 
         st.dataframe(page_df, use_container_width=True, height=350)
 
-
     def _process_submitted_data(self, parameters_changed):
         """Process the submitted data"""
-
         try:
-            if parameters_changed:
-                self.reset_state()
+
             with st.spinner("Processing data..."):
                 filename = getattr(self.csv, 'name', 'Unknown Dataset')
-                if st.session_state.current_dataset_name != filename:
+                is_new_dataset = (st.session_state.current_dataset_name != filename and
+                                  st.session_state.current_dataset_name is not None)
+
+                if parameters_changed and st.session_state.current_dataset_name != getattr(self.csv, 'name',
+                                                                                           'Unknown Dataset'):
+                    self.reset_state()
+
+                if is_new_dataset:
                     st.info(f"Dataset changed: {filename}")
                     st.session_state.analysis_history = []
                     st.session_state.total_rows = self._get_total_rows()
@@ -224,13 +273,11 @@ class DataLoader:
 
                 if self.df is not None and not self.df.empty:
                     update_session_state(self.df, dataset_name=filename)
-
                     st.write("### Processed Data")
                     dataset_info = (
-                        f"Using complete dataset ({len(self.df):,} rows)" if st.session_state.use_full_dataset
-                        else f"Using selected range: {len(self.df):,} rows (from row {self.header + self.skiprows:,} to {self.end_row:,})")
+                        f"Using complete dataset ({len(self.df):,} data rows)" if st.session_state.use_full_dataset
+                        else f"Using selected range: {len(self.df):,} data rows (from row {self.header + self.skiprows:,} to {self.end_row:,})")
                     st.write(dataset_info)
-
                     self._display_large_dataframe(self.df, page_size=1000)
                     st.success("Data processed and ready for analysis!")
                     return True
@@ -295,7 +342,7 @@ class DataLoader:
                                 value=st.session_state.form_params['header'],
                                 min_value=1,
                                 step=1,
-                                help="Specify the row where data begins",
+                                help="Row where data begins (minimum: 1)",
                                 key="header_input"
                             )
                         with col2:
@@ -304,45 +351,70 @@ class DataLoader:
                                 min_value=0,
                                 value=st.session_state.form_params['skiprows'],
                                 step=1,
-                                help="Number of data rows to skip",
+                                help="Number of data rows to skip (minimum: 0)",
                                 key="skiprows_input"
                             )
+                        actual_start_row = header + skiprows
+                        min_end_row = actual_start_row + 1
+
+                        current_end_row = st.session_state.get('end_row_input', None)
+                        if current_end_row is None:
+                            saved_end_row = st.session_state.form_params.get('end_row', None)
+                            if saved_end_row is not None and saved_end_row >= min_end_row:
+                                current_end_row = min(saved_end_row, total_rows)
+                            else:
+                                current_end_row = min(min_end_row + 100, total_rows)
+                        elif current_end_row < min_end_row:
+                            current_end_row = min_end_row
+                        elif current_end_row > total_rows:
+                            current_end_row = total_rows
+
                         with col3:
-                            min_end_row = header + skiprows + 1
                             end_row = st.number_input(
                                 "End Row",
-                                min_value=min_end_row,
-                                value=max(min_end_row, st.session_state.form_params['end_row']),
-                                max_value=total_rows,
+                                min_value=1,
+                                value=current_end_row,
+                                max_value=total_rows + 1000,
                                 step=1,
-                                help=f"Last row to include (maximum: {total_rows:,})",
+                                help=f"Last row to include (should be > {actual_start_row} and <= {total_rows:,})",
                                 key="end_row_input"
                             )
 
-                        actual_start_row = header + skiprows
                         actual_row_count = end_row - actual_start_row
+                        valid_selection = True
+                        if end_row <= actual_start_row:
+                            st.error(f"Invalid row selection: End row must be greater than {actual_start_row}")
+                            valid_selection = False
+                        elif end_row > total_rows:
+                            st.error(f"Invalid row selection: End row cannot exceed total rows ({total_rows:,})")
+                            valid_selection = False
+
                         st.write(
-                            f"Selected range: {actual_row_count:,} rows (from row {actual_start_row:,} to {end_row:,})")
+                            f"Selected range: {max(0, actual_row_count):,} rows (from row {actual_start_row:,} to {end_row:,})")
+
+                        if not valid_selection:
+                            st.error("Please correct the errors above before processing data")
                     else:
                         header = 1
                         skiprows = 0
                         end_row = total_rows
+                        valid_selection = True
                         st.write(f"Using complete dataset: {total_rows:,} rows")
 
                     skip_blank_lines = st.checkbox("Skip blank lines", value=True)
-                    submitted = st.form_submit_button("Process Data")
+                    submitted = st.form_submit_button("Process Data", disabled=not valid_selection)
+
+                st.session_state.form_params.update({
+                    'header': header,
+                    'skiprows': skiprows,
+                    'end_row': end_row
+                })
 
                 if submitted:
                     self.header = header
                     self.skiprows = skiprows
                     self.end_row = end_row
                     self.skip_blank_lines = skip_blank_lines
-
-                    st.session_state.form_params = {
-                        'header': header,
-                        'skiprows': skiprows,
-                        'end_row': end_row
-                    }
 
                     if self._process_submitted_data(True):
                         st.session_state.parameters_set = True

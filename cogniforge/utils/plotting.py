@@ -6,11 +6,19 @@ import numpy as np
 
 
 def plot_sampled(df: pd.DataFrame):
+
+    df = st.session_state.current_df
+
+    if st.session_state.get("is_downsampled", False):
+        df = st.session_state.downsampled_df
+    if st.session_state.get("detrending_active", False):
+        df = st.session_state.full_analyzed_df
+    if st.session_state.get("smoothing_active", False):
+        df = st.session_state.full_analyzed_df
+
     if df is None:
-        df = st.session_state.current_df.copy() if 'current_df' in st.session_state and st.session_state.current_df is not None else None
-        if df is None:
-            st.error("Please load data first using the Load Data Page.")
-            return None
+        st.error("Please load data first using the Load Data Page.")
+        return None
 
     # ***Dataset Information - Moved and updated***
     st.write("#### Current Dataset Information")
