@@ -22,6 +22,7 @@ from cogniforge.utils.furthr import FURTHRmind
 from cogniforge.utils.object_select_box import selectbox
 from cogniforge.utils.plotting import plot_sampled, plot_xy_chart
 from cogniforge.utils.state_button import button
+import config
 
 def save_univariate_time_series(df: pd.DataFrame, selected_column: str, output_path: str):
     if df.index.name is not None:
@@ -38,7 +39,7 @@ def save_univariate_time_series(df: pd.DataFrame, selected_column: str, output_p
     # Save to CSV
     univariate_df.to_csv(output_path, index=False, header=True)
 
-def plot_anomaly_detection(anomaly_score: np.ndarray) -> np.ndarray:
+def plot_anomaly_detection(anomaly_score: np.ndarray,threshold: float = 0.6) -> np.ndarray:
     zeit_column = next(
     (col for col in df.columns if col.lower().startswith(("Zeit", "Time"))), 
     df.columns[0]  # Default to the first column if no match is found
@@ -64,11 +65,11 @@ def plot_anomaly_detection(anomaly_score: np.ndarray) -> np.ndarray:
     ).set_index("Zeit")
 
     # Categorize points based on threshold
-    df_plot["Color"] = np.where(df_plot["Anomaly Score"] > 0.6, "Above 60%", "Below 60%")
+    df_plot["Color"] = np.where(df_plot["Anomaly Score"] > threshold,f"Above {threshold}", f"Below {threshold}")
 
     # Plot with Plotly
     fig = px.scatter(df_plot.reset_index(), x="Zeit", y="Anomaly Score", color="Color",
-                     color_discrete_map={"Above 60%": "red", "Below 60%": "blue"},
+                     color_discrete_map={f"Above {threshold}": "red", f"Below {threshold}": "blue"},
                      title="Anomaly Score Visualization")
 
     # Display in Streamlit
@@ -83,7 +84,7 @@ st.write(
     "Welcome to the Layer Thickness tool. Here you can analyze and visualize the thickness of your layer"
 )
 st.write(
-    "Upload your data to the [FURTHRmind](https://furthr.informatik.uni-marburg.de/) database. Then, here, you can choose the correct dataset and let our algorithms tell you the quality of your layer."
+    f"Upload your data to the [FURTHRmind]({config.furthr['host']}) database. Then, here, you can choose the correct dataset and let our algorithms tell you the quality of your layer."
 )
 
 if "fileName" not in st.session_state:
@@ -91,14 +92,20 @@ if "fileName" not in st.session_state:
 if "data" not in st.session_state:
     st.session_state.data = None
 with st.status("Download Data from FURTHRmind", expanded=True):
-    data,filename = FURTHRmind("download").download_csv() or (None, None)
+    downloader = FURTHRmind("download")
+    downloader.file_extension = "csv"
+    downloader.select_file()
+    st.session_state.data = None
+    data, filename = downloader.download_string_button() or (None, None)
+    st.session_state.data = data
 if "anomalyNameChanged" not in st.session_state:
     st.session_state.anomalyNameChanged = False
 if "anomaly_score" not in st.session_state:
     st.session_state.anomaly_score = None
     st.session_state.anomaly_algorithm = None
 if st.session_state.data is not None:
-    st.session_state.data.name = filename
+    st.success("Data downloaded!")
+    st.session_state.fileName = filename
     tabs = st.tabs(["Data Preview", "Plot Data", "Analysis"])
     with tabs[0]:
         dl = DataLoader(csv=st.session_state.data)
@@ -134,8 +141,6 @@ if st.session_state.data is not None:
 
                     if column_name:
                         st.write(f"Selected column: {column_name}")
-
-                        # ✅ Run AutoTSAD when Button is Clicked
                         if button(f"Run {algorithm.name()}", "run_autotsad", True):
                             temp_csv_path = "temp_univariate_data.csv"
                             save_univariate_time_series(df, column_name, temp_csv_path)
@@ -143,8 +148,6 @@ if st.session_state.data is not None:
                             st.session_state.clicked["run_autotsad"] = False  
                             st.session_state.anomaly_algorithm = algorithm.name()
                             st.session_state.anomalyNameChanged = False
-                            if(os.path.isdir("results-autotsad")):
-                                shutil.rmtree("results-autotsad")
                 else:
                     # For other detectors: Allow multiselect for multiple columns
                     column_names = st.multiselect(
@@ -157,10 +160,15 @@ if st.session_state.data is not None:
                         st.session_state.anomaly_algorithm = algorithm.name()
                         st.session_state.anomalyNameChanged = False
 
-if st.session_state.anomaly_score is not None and st.session_state.anomaly_algorithm is not None and not st.session_state.anomalyNameChanged:
-    plot_anomaly_detection(st.session_state.anomaly_score)
-    with st.expander("Upload Anomaly Score",expanded=True):
-            FURTHRmind("upload").upload_csv(
-                pd.DataFrame({"score": st.session_state.anomaly_score, "is_anomaly": st.session_state.anomaly_score > 0.6}),
-                f"{st.session_state.fileName}-anomaly_score-{st.session_state.anomaly_algorithm}-{dt.datetime.now().strftime('%Y-%m-%dT%H-%M-%S')}",
-            )
+            if st.session_state.anomaly_score is not None and st.session_state.anomaly_algorithm is not None and not st.session_state.anomalyNameChanged:
+                threshold = st.slider("Set anomaly threshold for visualization", min_value=0.0, max_value=1.0, value=0.6)
+                plot_anomaly_detection(st.session_state.anomaly_score,threshold)
+                with st.expander("Upload Anomaly Score",expanded=True):
+                    try:
+                        FURTHRmind("upload").upload_csv(
+                            pd.DataFrame({"score": st.session_state.anomaly_score, "is_anomaly": st.session_state.anomaly_score > threshold}),
+                            f"{st.session_state.fileName}-anomaly_score-{st.session_state.anomaly_algorithm}-{dt.datetime.now().strftime('%Y-%m-%dT%H-%M-%S')}",
+                        )
+                    except Exception as upload_error:
+                        st.error(f"Upload error: {str(upload_error)}")
+                        st.exception(upload_error)

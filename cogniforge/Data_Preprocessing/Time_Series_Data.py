@@ -2,10 +2,11 @@ import streamlit as st
 from datetime import datetime
 from furthrmind import Furthrmind as API
 from furthrmind.file_loader import FileLoader
+import config
 
 #test #test....
 if 'ts_subpage' not in st.session_state:
-    st.session_state.ts_subpage = "Overview page"
+    st.session_state.ts_subpage = "Overview"
 if 'df' not in st.session_state:
     st.session_state.df = None
 if 'analysis_history' not in st.session_state:
@@ -106,14 +107,17 @@ if st.session_state.ts_subpage == "Load Data":
                         del st.session_state[key]
                 st.rerun()
 
-    st.write("Download your data from the [FURTHRmind](https://furthr.informatik.uni-marburg.de/) database.")
+    st.write(f"Download your data from the [FURTHRmind]({config.furthr['host']}) database.")
     try:
         from utils.dataloader import DataLoader
         from utils.furthr import FURTHRmind
         data = None
         with st.expander("Step 1: Download Data", expanded=True):
             with st.spinner('Downloading data...'):
-                data, filename = FURTHRmind().download_csv() or (None, None)
+                downloader = FURTHRmind()
+                downloader.file_extension = "csv"
+                downloader.select_file()
+                data, filename = downloader.download_string_button() or (None, None)
                 if data is not None:
                     is_new_dataset = ('original_filename' in st.session_state and
                                       st.session_state.original_filename != filename)
@@ -226,37 +230,29 @@ elif st.session_state.ts_subpage == "Upload Results":
     )
     st.title("📤 Upload Results")
     # Initialize session state variables
-    if 'upload_clicked' not in st.session_state:
-        st.session_state.upload_clicked = False
     if 'selected_location' not in st.session_state:
         st.session_state.selected_location = None
-    if 'upload_message' not in st.session_state:
-        st.session_state.upload_message = None
 
-    def handle_upload():
-        st.session_state.upload_clicked = True
     if st.session_state.df is not None:
         try:
             show_analysis_history()
             # Choose Upload Location
             with st.expander("Step 1: Choose Upload Location", expanded=True):
-                fm, group, experiment, furthr = setup_upload_location()
-                if all([fm, group, experiment]):
+                fm, experiment = setup_upload_location()
+                if all([fm, experiment]):
                     st.session_state.selected_location = {
                         'fm': fm,
-                        'group': group,
                         'experiment': experiment
                     }
-                    st.success(f"Selected folder: {group.name}")
+                    st.success(f"Selected folder: {experiment.name}")
 
             # Select Data to Upload
             if st.session_state.selected_location:
                 with st.expander("Step 2: Select Data to Upload", expanded=True):
-                    widget_key_prefix = f"upload_{int(time.time())}"
-                    data_to_upload, analysis_types = get_upload_data(widget_key_prefix)
+                    data_to_upload, analysis_types = get_upload_data()
 
                     if data_to_upload is not None:
-                        name = generate_filename(analysis_types, widget_key_prefix)
+                        name = generate_filename(analysis_types)
                         prepared_data = prepare_dataframe(data_to_upload)
                         # Preview
                         st.write("### Preview of Selected Data:")
@@ -266,29 +262,23 @@ elif st.session_state.ts_subpage == "Upload Results":
                         with col1:
                             st.info(f"File will be uploaded as: **{name}**")
                         with col2:
-                            upload_button = st.button(
+                            upload_clicked = st.button(
                                 "Upload Data",
-                                key=f"{widget_key_prefix}_upload_button",
-                                type="primary",
-                                on_click=handle_upload
+                                key="upload_button",
+                                type="primary"
                             )
                         # Upload process
-                        if st.session_state.upload_clicked:
-                            st.session_state.upload_clicked = False
+                        if upload_clicked:
                             with st.spinner("Uploading data..."):
                                 try:
                                     location = st.session_state.selected_location
                                     upload_success, message = upload_analyzed_data(
                                         analyzed_df=prepared_data,
                                         analysis_name=name,
-                                        analysis_history=st.session_state.analysis_history,
-                                        original_filename=st.session_state.get('original_filename'),
                                         fm=location['fm'],
-                                        group=location['group'],
                                         experiment=location['experiment']
                                     )
                                     if upload_success:
-                                        st.session_state.upload_message = message
                                         st.session_state.selected_location = None
                                         st.success(message)
                                     else:
