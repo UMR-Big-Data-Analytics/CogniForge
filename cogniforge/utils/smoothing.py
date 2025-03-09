@@ -5,38 +5,49 @@ from scipy import stats
 import plotly.graph_objects as go
 from typing import Dict, Any
 from datetime import datetime
-
+from utils.session_state_management import update_session_state
 """
 Perform smoothing analysis on selected columns using exponential smoothing
 Functions:
 - Select columns to undergo smoothing
-- Code check
+- Code check whether smoothing is needed
 - Code suggests an initial smoothing factor based on variable's variability (calculated by calculate_column_volatility())
 - User can adjust smoothing factor using a slider
 - Enable visualization of before and after smoothing
 - Add smoothing to analysis history if smoothing is performed
 """
 def initialize_session_state():
-    if 'smoothing_steps' not in st.session_state:
-        st.session_state.smoothing_steps = []
-    if 'current_df' not in st.session_state:
-        st.session_state.current_df = None
-    if 'smoothing_stats' not in st.session_state:
-        st.session_state.smoothing_stats = {}
-    if 'column_alphas' not in st.session_state:
-        st.session_state.column_alphas = {}
+    if 'downsample_steps' not in st.session_state:
+        st.session_state.downsample_steps = []
     if 'analysis_history' not in st.session_state:
         st.session_state.analysis_history = []
+    if 'current_df' not in st.session_state:
+        st.session_state.current_df = None
+    if 'processing_complete' not in st.session_state:
+        st.session_state.processing_complete = False
+    if 'original_df' not in st.session_state:
+        st.session_state.original_df = None
+    if 'smoothing_steps' not in st.session_state:
+        st.session_state.smoothing_steps = []
+    if 'smoothing_stats' not in st.session_state:
+        st.session_state.smoothing_stats = {}
 
 
 def calculate_column_volatility(column_data: np.ndarray) -> float:
-    """Calculate volatility for a given column."""
+    """Calculate volatility for a given column with more aggressive smoothing."""
     changes_between_points = np.diff(column_data)
     spread_of_changes = np.std(changes_between_points)
     spread_of_data = np.std(column_data)
     volatility = spread_of_changes / spread_of_data
-    return max(0.1, min(0.9, 1 - volatility))
+    base_alpha = max(0.02, min(0.2, 0.5 - volatility))
+    # Adjust based on outliers
+    z_scores = np.abs(stats.zscore(column_data))
+    outlier_ratio = np.mean(z_scores > 2.5)
+    # more smoothing
+    if outlier_ratio > 0.02:
+        base_alpha *= 0.6
 
+    return base_alpha
 
 def check_smoothing_need(data: np.ndarray) -> bool:
         """Determine if smoothing is need
@@ -50,35 +61,37 @@ def check_smoothing_need(data: np.ndarray) -> bool:
         rolling_std = pd.Series(data).rolling(window=window).std()
         overall_std = np.std(data)
         z_scores = np.abs(stats.zscore(data))
-        outlier_ratio = np.mean(z_scores > 3)
+        outlier_ratio = np.mean(z_scores >3.5)
         local_changes = np.abs(np.diff(data))
         signal_mean = np.mean(np.abs(data))
         test_alpha = 0.5
         # Extra check
         test_smoothed = exponential_smoothing(data, test_alpha)
         test_stats = calculate_smoothing_statistics(data, test_smoothed)
-        needs_smoothing = (
-                ((rolling_std.mean() > 0.1 * overall_std) or
-                 (outlier_ratio > 0.05) or
-                 (local_changes.mean() > 0.1 * signal_mean)) and
-                (test_stats['noise_reduction'] > 0.5)
-        )
-        return needs_smoothing
+        noise_indicators = [
+            rolling_std.mean() > 0.03 ** overall_std,
+            outlier_ratio > 0.02,
+            local_changes.mean() > 0.05 * signal_mean
+        ]
+        return any(noise_indicators) and calculate_smoothing_statistics(
+            data, exponential_smoothing(data, 0.5)
+        )['noise_reduction'] > 0.4
 
 
 # Weighted moving average
-def exponential_smoothing(data: np.ndarray, alpha: float) -> np.ndarray:
-    """Apply exponential smoothing to the input data. """
+def exponential_smoothing(data: np.ndarray, alpha: float, iterations: int = 1) -> np.ndarray:
+    """Apply exponential smoothing with optional multiple passes."""
     smoothed = np.zeros(len(data))
     smoothed[0] = data[0]
     mask = np.isnan(data)
-    clean_data = np.where(mask, smoothed[0], data)
-
-    for t in range(1, len(data)):
-        if mask[t]:
-            smoothed[t] = smoothed[t - 1]
-        else:
-            smoothed[t] = alpha * clean_data[t] + (1 - alpha) * smoothed[t - 1]
+    current_data = np.where(mask, smoothed[0], data)
+    for _ in range(iterations):
+        for t in range(1, len(data)):
+            if mask[t]:
+                smoothed[t] = smoothed[t - 1]
+            else:
+                smoothed[t] = alpha * current_data[t] + (1 - alpha) * smoothed[t - 1]
+        current_data = smoothed.copy()
     return smoothed
 
 def calculate_smoothing_statistics(original_data: np.ndarray, smoothed_data: np.ndarray) -> Dict[str, float]:
@@ -97,23 +110,62 @@ def calculate_smoothing_statistics(original_data: np.ndarray, smoothed_data: np.
         }
 
 # Before and after visualization
-def visualize_smoothing(original_data, smoothed_data, column_name, alpha):
-        time_idx = np.arange(len(original_data))
-        fig = go.Figure()
-        # original data
-        fig.add_trace(
-            go.Scatter(x=time_idx, y=original_data, name="Original", line=dict(color='#1f77b4', width=1), opacity=0.8))
-        # smoothed data
-        fig.add_trace(go.Scatter(x=time_idx, y=smoothed_data, name="Smoothed", line=dict(color='#ff7f0e', width=2)))
-        # Configure plot
-        fig.update_layout(
-            height=400, title=f"Smoothing: {column_name} (α = {alpha:.2f})", showlegend=True,
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            margin=dict(l=50, r=20, t=60, b=40)
-        )
-        fig.update_xaxes(title_text="Time Index")
-        fig.update_yaxes(title_text="Value")
-        st.plotly_chart(fig, use_container_width=True)
+def visualize_smoothing(original_data, smoothed_data, column_name, alpha, timestamps):
+    """
+    Visualize original and smoothed data using time values for x-axis."""
+    fig = go.Figure()
+
+    # Original data
+    fig.add_trace(
+        go.Scatter(x=timestamps, y=original_data,
+                   name="Original data",
+                   line=dict(color='#1f77b4', width=1),
+                   opacity=0.8)
+    )
+
+    # Smoothed data
+    fig.add_trace(
+        go.Scatter(x=timestamps, y=smoothed_data,
+                   name="Smoothed data",
+                   line=dict(color='#ff7f0e', width=2))
+    )
+
+    # Configure plot
+    fig.update_layout(
+        height=400,
+        title=f"Smoothing: {column_name} (α = {alpha:.2f})",
+        showlegend=True,
+        legend=dict(orientation="h", y=-0.3, yanchor="middle", xanchor="center", x=0.5),
+        margin=dict(l=50, r=20, t=60, b=40)
+    )
+    fig.update_xaxes(title_text="Time (s)")
+    fig.update_yaxes(title_text="Value")
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def visualize_original_data(data, column_name, timestamps):
+    """
+    Visualize original data using time values for x-axis.
+    """
+    fig = go.Figure()
+
+    # Original data
+    fig.add_trace(
+        go.Scatter(x=timestamps, y=data,
+                   name="Original data",
+                   line=dict(color='#1f77b4', width=1))
+    )
+
+    # Configure plot
+    fig.update_layout(
+        height=400,
+        title=f"Time Series: {column_name}",
+        showlegend=True,
+        legend=dict(orientation="h", y=-0.3, yanchor="middle", xanchor="center", x=0.5),
+    )
+    fig.update_xaxes(title_text="Time (s)")
+    fig.update_yaxes(title_text="Value")
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def record_smoothing_step(column: str, alpha: float, stats: dict):
@@ -131,58 +183,59 @@ def record_smoothing_step(column: str, alpha: float, stats: dict):
         st.session_state.analysis_history.append(history_message)
 
 
-
 def analyze_smooth(df: pd.DataFrame = None) -> pd.DataFrame:
-        """Main function for smoothing"""
-        initialize_session_state()
+    initialize_session_state()
+    if 'selected_columns' not in st.session_state:
+        st.session_state.selected_columns = []
 
-        if df is not None:
-            st.session_state.current_df = df.copy()
-        if st.session_state.current_df is None:
-            st.error("Please load data first using the Data Loader.")
-            return None
+    if df is not None:
+        pass
+    elif 'current_df' in st.session_state and st.session_state.current_df is not None:
+        df = st.session_state.current_df.copy()
+    else:
+        st.error("Please load data first using the Data Loader.")
+        return None
 
-        # Display current dataset info
-        df = st.session_state.current_df
-        dataset_name = st.session_state.get('current_dataset_name', 'Unnamed Dataset')
-        st.markdown(f"**Dataset Name:** {dataset_name}")
-        actual_rows = len(df)
-        st.write(f"Using a dataset with {actual_rows:,} rows")
+    st.write("##### Current Dataset Information")
+    dataset_name = st.session_state.get('current_dataset_name', 'Unnamed Dataset')
+    st.markdown(f"**Dataset Name:** {dataset_name}")
+    actual_rows = len(st.session_state.current_df)
+    st.write(f"Using a dataset with {actual_rows:,} rows")
 
-        # Display history
-        if st.session_state.analysis_history:
-            with st.expander("Analysis History", expanded=False):
-                for message in st.session_state.analysis_history:
-                    st.write(message)
+    if st.session_state.analysis_history:
+        with st.expander("📝 **Analysis History**", expanded=False):
+            for message in st.session_state.analysis_history:
+                st.write(message)
 
-        # Select variables
-        chosen_columns = st.multiselect(
-            "Choose columns to smooth",
-            options=list(df.columns[1:]),
-            format_func=lambda x: ' '.join(x) if isinstance(x, tuple) else str(x)
-        )
+    time_col = [col for col in df.columns if 'Zeit' in col][0]
+    timestamps = df[time_col].values
 
-        if not chosen_columns:
-            st.info("Please choose at least one column to smooth.")
-            return df
+    chosen_columns = st.multiselect("Choose columns to analyze", options=df.columns[1:])
+    if not chosen_columns:
+        st.info("Please choose at least one column to smooth.")
+        return df
 
-        # Compute initial suggested alphas for each column
-        column_volatilities = {col: calculate_column_volatility(df[col].astype(float).values) for col in chosen_columns}
+    # Create tabs for each column
+    tabs = st.tabs([f"Analysis for {' '.join(col) if isinstance(col, tuple) else str(col)}"
+                    for col in chosen_columns])
 
-        # Create tabs for each column
-        tabs = st.tabs([f"Analysis for {' '.join(col) if isinstance(col, tuple) else str(col)}"
-                        for col in chosen_columns])
+    processed_columns = []  # number of variables chosen
+    attempted_columns = []  # number of actual smoothed data
 
-        processed_columns = [] # number of variables chosen
-        attempted_columns = [] # number of actual smoothed data
+    # Process each column
+    for tab, chosen_column in zip(tabs, chosen_columns):
+        with tab:
+            st.write(
+                f"### Analysis for {' '.join(chosen_column) if isinstance(chosen_column, tuple) else str(chosen_column)}")
+            # Prepare data
+            data = df[chosen_column].astype(float).values
+            attempted_columns.append(chosen_column)
+            needs_smoothing = check_smoothing_need(data)
+            if needs_smoothing:
+                st.warning("⚠️ Noise detected - Smoothing recommended")
 
-        # Process each column
-        for idx, (tab, chosen_column) in enumerate(zip(tabs, chosen_columns)):
-            with tab:
-                st.write(
-                    f"### Analysis for {' '.join(chosen_column) if isinstance(chosen_column, tuple) else str(chosen_column)}")
-
-                suggested_alpha = column_volatilities[chosen_column]
+                # Only calculate and show suggested alpha if smoothing is needed
+                suggested_alpha = calculate_column_volatility(data)
                 st.info(f"""
                 **Suggested Smoothing Strength (α):** {suggested_alpha:.2f}
                 Interpretation:
@@ -202,49 +255,57 @@ def analyze_smooth(df: pd.DataFrame = None) -> pd.DataFrame:
                     key=slider_key
                 )
 
-                # Prepare data
-                data = df[chosen_column].astype(float).values
-                attempted_columns.append(chosen_column)
-                needs_smoothing = check_smoothing_need(data)
-
-                if needs_smoothing:
-                    st.warning("⚠️ Noise detected - Smoothing recommended")
-                    # Apply smoothing with current alpha value
-                    smoothed_data = exponential_smoothing(data, alpha)
-                    result_column = f"{chosen_column}_smoothed"
-
-                    # Calculate and display statistics for current alpha
-                    stats = calculate_smoothing_statistics(data, smoothed_data)
-                    st.write("#### Smoothing Metrics")
+                # Apply smoothing with current alpha value
+                smoothed_data = exponential_smoothing(data, alpha)
+                stats = calculate_smoothing_statistics(data, smoothed_data)
+                # Put stats in a collapsible expander
+                with st.expander("Smoothing Statistics"):
+                    stat_info = """
+                                   - **Noise Reduction**: Percentage of noise removed by smoothing  
+                                   - **Original Std Dev**: Standard deviation of original data  
+                                   - **Smoothed Std Dev**: Standard deviation after smoothing  
+                                   """
+                    st.info(stat_info)
                     metrics_df = pd.DataFrame({
                         'Metric': ['Noise Reduction (%)', 'Original Std Dev', 'Smoothed Std Dev'],
                         'Value': [f"{stats['noise_reduction']:.2f}%",
                                   f"{stats['original_std']:.6f}",
                                   f"{stats['smoothed_std']:.6f}"]
                     })
-                    st.dataframe(metrics_df, use_container_width=True)
-                    # Visualize current smoothing
-                    visualize_smoothing(data, smoothed_data, str(chosen_column), alpha)
-                    # Add apply button for this specific column
-                    if st.button(f"Apply Smoothing to {chosen_column}", key=f"apply_{chosen_column}", type="primary"):
-                        df[result_column] = smoothed_data
-                        st.session_state.smoothing_stats[result_column] = stats
-                        record_smoothing_step(chosen_column, alpha, stats)
-                        processed_columns.append(chosen_column)
-                        st.success(f"✅ Smoothing applied to {chosen_column}")
-                else:
-                    st.success("✓ No significant noise detected - No smoothing applied")
-        # Show final status
-        if processed_columns:
-            st.session_state.current_df = df.copy()
-        # Preview of dataframe
-        st.write("### Dataset Preview")
-        preview_df = df.head(15)
-        display_df = preview_df.copy()
-        numeric_cols = display_df.select_dtypes(include=['float64', 'float32']).columns
-        for col in numeric_cols:
-            display_df[col] = display_df[col].apply(
-                lambda x: f'{float(x):.6f}'.replace(',', '.') if pd.notnull(x) else x)
+                    st.dataframe(metrics_df, use_container_width=True, hide_index=True)
 
-        st.dataframe(display_df, use_container_width=True, height=350)
-        return df
+                result_column = f"{chosen_column}_smoothed"
+
+                # Visualization button and plot
+                st.caption("Warning: Plotting a large dataset may take time or affect UI performance.")
+                if st.button("Plot Data", key=f"plot_btn_{chosen_column}", type="primary"):
+                    with st.expander("📊 Visualization", expanded=True):
+                        visualize_smoothing(data, smoothed_data, str(chosen_column), alpha, timestamps)
+
+                # Add apply button for this specific column
+                if st.button(f"Apply Smoothing to {chosen_column}", key=f"apply_{chosen_column}", type="primary"):
+                    df[result_column] = smoothed_data
+                    st.session_state.smoothing_stats[result_column] = stats
+                    record_smoothing_step(chosen_column, alpha, stats)
+                    processed_columns.append(chosen_column)
+                    update_session_state(df, analysis_type='smooth')
+                    st.success(f"✅ Smoothing applied to {chosen_column}")
+            else:
+                st.success("✓ No significant noise detected - No smoothing required")
+                visualize_original_data(data, str(chosen_column), timestamps)
+
+    # Show final status
+    if processed_columns:
+        st.session_state.current_df = df.copy()
+
+    # Preview of dataframe
+    st.write("### Dataset Preview")
+    preview_df = df.head(15)
+    display_df = preview_df.copy()
+    numeric_cols = display_df.select_dtypes(include=['float64', 'float32']).columns
+    for col in numeric_cols:
+        display_df[col] = display_df[col].apply(
+            lambda x: f'{float(x):.6f}'.replace(',', '.') if pd.notnull(x) else x)
+        display_df.index = range(1, len(display_df) + 1)
+    st.dataframe(display_df, use_container_width=True, height=350)
+    return st.session_state.current_df
