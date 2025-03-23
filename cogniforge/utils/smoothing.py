@@ -7,6 +7,8 @@ from typing import Dict, Any
 from datetime import datetime
 from utils.session_state_management import update_session_state
 """
+SMOOTHING ANALYSIS FEATURE
+==================================
 Perform smoothing analysis on selected columns using exponential smoothing
 Functions:
 - Select columns to undergo smoothing

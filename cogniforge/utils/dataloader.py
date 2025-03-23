@@ -4,7 +4,10 @@ import pandas as pd
 import streamlit as st
 from utils.session_state_management import update_session_state
 
-#test test
+"""
+This code implements a DataLoader class for handling CSV data
+The code manages CSV load, preview amd other processes
+"""
 @dataclass
 class DataLoader:
     csv: StringIO
@@ -91,6 +94,7 @@ class DataLoader:
         """Shows information about the currently loaded dataset and any active analyses"""
         warning_message = []
         if st.session_state.current_df is not None and st.session_state.processing_complete:
+            # Display dataset info
             if st.session_state.use_full_dataset:
                 warning_message.append(f"• Using complete dataset ({len(st.session_state.current_df):,} rows)")
             else:
@@ -125,9 +129,11 @@ class DataLoader:
         filename = getattr(self.csv, 'name', 'Unknown')
         st.write(f"Dataset: {filename}")
         st.write(f"Previewing first 10 rows of the dataset ({st.session_state.total_rows:,} total rows)")
+        # Check header structure:
         self.csv.seek(0)
         first_row = pd.read_csv(self.csv, sep=self.delimiter, nrows=1, encoding="latin1")
         self.csv.seek(0)
+        # header include [: header is already combined, else header includes row 0 and 1
         header = 0 if '[' in str(first_row.columns[0]) else [0, 1]
         preview_df = pd.read_csv(
             self.csv,
@@ -138,7 +144,7 @@ class DataLoader:
             thousands=".",
             nrows=10
         )
-        # Adjust columns
+        # Adjust columns: replace decimal delimiter from , to .
         if isinstance(header, list):
             preview_df.columns = [f"{col[0]}[{col[1]}]" if pd.notna(col[1]) else col[0] for col in preview_df.columns]
         preview_df = preview_df.map(
@@ -156,57 +162,42 @@ class DataLoader:
             if not content.strip():
                 st.error("The file appears to be empty or contains only blank lines.")
                 return None
+            # Split count blank lines
             lines = content.splitlines()
             blank_lines = [line for line in lines if not line.strip()]
             blank_line_count = len(blank_lines)
             if blank_line_count > 0:
-                st.info(
-                    f"File contains {blank_line_count} blank line(s).")
-            # Filter out empty lines
+                st.info(f"File contains {blank_line_count} blank line(s).")
+            source = self.csv
             if not self.skip_blank_lines:
-                lines = content.splitlines()
                 non_empty_lines = [line for line in lines if line.strip()]
                 if not non_empty_lines:
                     st.error("The file contains only empty rows.")
                     return None
-                filtered_content = StringIO('\n'.join(non_empty_lines))
-                first_row = pd.read_csv(filtered_content, sep=self.delimiter, nrows=1, encoding="latin1")
-                filtered_content.seek(0)
-                has_combined_headers = '[' in str(first_row.columns[0])
-                header = 0 if has_combined_headers else [0, 1]
-
-                df = pd.read_csv(
-                    filtered_content,
-                    sep=self.delimiter,
-                    decimal=",",
-                    header=header,
-                    encoding="latin1",
-                    low_memory=False,
-                    thousands=".",
-                    skip_blank_lines=True
-                )
-            else:
-                first_row = pd.read_csv(self.csv, sep=self.delimiter, nrows=1, encoding="latin1")
-                self.csv.seek(0)
-                has_combined_headers = '[' in str(first_row.columns[0])
-                header = 0 if has_combined_headers else [0, 1]
-
-                df = pd.read_csv(
-                    self.csv,
-                    sep=self.delimiter,
-                    decimal=",",
-                    header=header,
-                    encoding="latin1",
-                    low_memory=False,
-                    thousands=".",
-                    skip_blank_lines=self.skip_blank_lines
-                )
+                source = StringIO('\n'.join(non_empty_lines))
+            # check header structure
+            source.seek(0)
+            first_row = pd.read_csv(source, sep=self.delimiter, nrows=1, encoding="latin1")
+            source.seek(0)
+            has_combined_headers = '[' in str(first_row.columns[0])
+            header = 0 if has_combined_headers else [0, 1]
+            # Read CSV
+            df = pd.read_csv(
+                source,
+                sep=self.delimiter,
+                decimal=",",
+                header=header,
+                encoding="latin1",
+                low_memory=False,
+                thousands=".",
+                skip_blank_lines=True
+            )
+            # Format header
             if not has_combined_headers:
                 df.columns = [f"{col[0]}[{col[1]}]" if pd.notna(col[1]) else col[0] for col in df.columns]
-
+            # Select only sample of data
             if not st.session_state.use_full_dataset:
                 df = df.iloc[self.header + self.skiprows - 1: self.end_row - 1]
-
             return df
 
         except Exception as e:
@@ -222,15 +213,15 @@ class DataLoader:
         pages = total_rows // page_size
         if total_rows % page_size != 0:
             pages += 1
-
+        # display page number
         if pages > 1:
             page = st.number_input("Page", 1, pages, 1, help=f"Pick a page (total: {pages})", key="page_input")
         else:
             page = 1
-
+        # calculate start and end rows
         start = (page - 1) * page_size
         end = min(start + page_size, total_rows)
-
+        # Display row range info
         if not st.session_state.use_full_dataset:
             base_row = self.header + self.skiprows
             adjusted_start = base_row + start
@@ -242,6 +233,7 @@ class DataLoader:
         page_df = df.iloc[start:end].copy()
         page_df.index = range(1, len(page_df) + 1)
 
+        #format columns
         number_cols = page_df.select_dtypes(['float64', 'float32']).columns
         for col in number_cols:
             page_df[col] = page_df[col].map(
@@ -254,6 +246,7 @@ class DataLoader:
         try:
 
             with st.spinner("Processing data..."):
+                # Check if dataset has changed: if the user changes his mind and load another dataaset
                 filename = getattr(self.csv, 'name', 'Unknown Dataset')
                 is_new_dataset = (st.session_state.current_dataset_name != filename and
                                   st.session_state.current_dataset_name is not None)
@@ -261,16 +254,16 @@ class DataLoader:
                 if parameters_changed and st.session_state.current_dataset_name != getattr(self.csv, 'name',
                                                                                            'Unknown Dataset'):
                     self.reset_state()
-
+                # # Handle new dataset
                 if is_new_dataset:
                     st.info(f"Dataset changed: {filename}")
                     st.session_state.analysis_history = []
                     st.session_state.total_rows = self._get_total_rows()
                     self.reset_state()
-
+                # Update current dataset name
                 st.session_state.current_dataset_name = filename
                 self.df = self._read_csv()
-
+                # Update session state
                 if self.df is not None and not self.df.empty:
                     update_session_state(self.df, dataset_name=filename)
                     st.write("### Processed Data")
@@ -295,29 +288,26 @@ class DataLoader:
             # Check if the dataset has changed and whether the user confirmed loading new data
             if st.session_state.current_dataset_name != filename:
                 st.info(f"New dataset detected: {filename}")
-
                 if not self._check_for_existing_analysis():
-                    return None  # Wait for user confirmation to proceed
-
+                    return None
                 if st.session_state.show_download_options:
                     # Reset states for the new dataset
                     st.session_state.total_rows = self._get_total_rows()
                     self.reset_state()
                     st.session_state.current_dataset_name = filename
                 else:
-                    return None  # Don't show options if 'Proceed' was not clicked
-
+                    return None
             # If new dataset was selected, allow the user to set parameters
             if (not st.session_state.get('parameters_set', False) and
                     st.session_state.show_download_options):
                 self._preview()
-
+            #show dataset info
             if st.session_state.show_download_options:
                 st.write("### Dataset Selection")
                 st.write(f"Dataset: {filename}")
                 total_rows = st.session_state.total_rows
                 st.write(f"Total rows in dataset: {total_rows:,}")
-
+            # show option to choose the use dataset or just a subset
             use_full_dataset = st.checkbox(
                     "Use entire dataset",
                     value=st.session_state.use_full_dataset,
@@ -332,7 +322,7 @@ class DataLoader:
                         'skiprows': 0,
                         'end_row': total_rows if use_full_dataset else min(1000, total_rows)
                     }
-
+            # select parameters
             with st.form("dataset_selection_form", clear_on_submit=False):
                     if not use_full_dataset:
                         col1, col2, col3 = st.columns(3)
@@ -354,6 +344,7 @@ class DataLoader:
                                 help="Number of data rows to skip (minimum: 0)",
                                 key="skiprows_input"
                             )
+                        # Calculate actual start row
                         actual_start_row = header + skiprows
                         min_end_row = actual_start_row + 1
 
@@ -400,7 +391,7 @@ class DataLoader:
                         end_row = total_rows
                         valid_selection = True
                         st.write(f"Using complete dataset: {total_rows:,} rows")
-
+                    # option to skip blank lines
                     skip_blank_lines = st.checkbox("Skip blank lines", value=True)
                     submitted = st.form_submit_button("Process Data", disabled=not valid_selection)
 
@@ -409,7 +400,7 @@ class DataLoader:
                     'skiprows': skiprows,
                     'end_row': end_row
                 })
-
+            #process data
             if submitted:
                     self.header = header
                     self.skiprows = skiprows
@@ -423,7 +414,6 @@ class DataLoader:
             if st.session_state.processing_complete and st.session_state.current_df is not None:
                 st.write("### Current Processed Data")
                 self._display_large_dataframe(st.session_state.current_df, page_size=1000)
-
             return None
 
         except Exception as e:
@@ -433,7 +423,6 @@ class DataLoader:
     def get_processedDataFrame(self) -> pd.DataFrame:
         try:
             st.info(f"New dataset detected: {st.session_state.fileName}")
-
             # Ensure total rows are updated
             st.session_state.total_rows = self._get_total_rows()
             self.reset_state()
@@ -446,12 +435,10 @@ class DataLoader:
                 help="Check to see the complete dataset. Uncheck to preview only first 10 rows.",
                 key="dataset_mode"
             )
-
             # If user toggles the checkbox, update session state
             if use_full_dataset != st.session_state.use_full_dataset:
                 st.session_state.use_full_dataset = use_full_dataset
                 st.rerun() 
-
             # Load the dataset
             self.csv.seek(0)
             df = pd.read_csv(
@@ -470,7 +457,6 @@ class DataLoader:
             # If full dataset is not selected, show only first 10 rows
             if not use_full_dataset:
                 previewDf = df.head(10)
-
             # Store the dataframe in session state
             st.session_state.current_df = df.copy()
             dataset_info = (
@@ -479,7 +465,6 @@ class DataLoader:
                 else f"Previewing first 10 rows of the dataset"
             )
             st.write(dataset_info)
-
             # Paginate and display the dataset (only if full dataset is selected)
             if use_full_dataset:
                 self._display_large_dataframe(previewDf, page_size=1000)
