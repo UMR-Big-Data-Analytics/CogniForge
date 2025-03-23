@@ -6,11 +6,9 @@ from datetime import datetime
 import plotly.graph_objects as go
 from utils.session_state_management import update_session_state
 
-"""
-DOWNSAMPLING ANALYSIS FEATURE
-=====================================
-Downsample data using LTTB(Largest-Triangle-Three-Buckets) algo
-"""
+# DOWNSAMPLING ANALYSIS FEATURE
+# =====================================
+# Downsample data using LTTB(Largest-Triangle-Three-Buckets) algo
 @st.cache_data
 def initialize_session_state():
     if 'downsample_steps' not in st.session_state:

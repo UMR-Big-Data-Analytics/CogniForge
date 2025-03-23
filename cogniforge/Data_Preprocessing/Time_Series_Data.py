@@ -7,23 +7,22 @@ from furthrmind.file_loader import FileLoader
 from utils.downsampling import downsampling_page
 from utils.session_state_management import update_session_state
 
-"""
-TIME SERIES ANALYSIS 
-=========================================
-This code implements the main application structure for a time series analysis tool.
-MAIN FEATURES:
-- Data loading from the FURTHRmind database
-- Interactive visualizations of time series data
-- Trend detection and detrending
-- Noise reduction through smoothing
-- Data size reduction through downsampling
-- Results uploading back to the FURTHRmind database
-
-"""
+# TIME SERIES ANALYSIS
+# =========================================
+# This code implements the main application structure for a time series analysis tool.
+# MAIN FEATURES:
+# - Data loading from the FURTHRmind database
+# - Interactive visualizations of time series data
+# - Trend detection and detrending
+# - Noise reduction through smoothing
+# - Data size reduction through downsampling
+# - Results uploading back to the FURTHRmind database
 if 'ts_subpage' not in st.session_state:
     st.session_state.ts_subpage = "Overview"
 if 'df' not in st.session_state:
     st.session_state.df = None
+if 'current_df' not in st.session_state:
+    st.session_state.current_df = None
 if 'analysis_history' not in st.session_state:
     st.session_state.analysis_history = []
 if 'current_analysis_type' not in st.session_state:

@@ -6,18 +6,18 @@ import plotly.graph_objects as go
 from typing import Dict, Any
 from datetime import datetime
 from utils.session_state_management import update_session_state
-"""
-SMOOTHING ANALYSIS FEATURE
-==================================
-Perform smoothing analysis on selected columns using exponential smoothing
-Functions:
-- Select columns to undergo smoothing
-- Code check whether smoothing is needed
-- Code suggests an initial smoothing factor based on variable's variability (calculated by calculate_column_volatility())
-- User can adjust smoothing factor using a slider
-- Enable visualization of before and after smoothing
-- Add smoothing to analysis history if smoothing is performed
-"""
+
+# SMOOTHING ANALYSIS FEATURE
+# ==================================
+# Perform smoothing analysis on selected columns using exponential smoothing
+# Functions:
+# - Select columns to undergo smoothing
+# - Code check whether smoothing is needed
+# - Code suggests an initial smoothing factor based on variable's variability (calculated by calculate_column_volatility())
+# - User can adjust smoothing factor using a slider
+# - Enable visualization of before and after smoothing
+# - Add smoothing to analysis history if smoothing is performed
+
 def initialize_session_state():
     if 'downsample_steps' not in st.session_state:
         st.session_state.downsample_steps = []

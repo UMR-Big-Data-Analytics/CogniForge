@@ -8,9 +8,10 @@ import numpy as np
 
 
 def plot_sampled(df: pd.DataFrame):
-
-    df = st.session_state.current_df
-
+    if 'current_df' not in st.session_state:
+        st.session_state.current_df = df
+    if st.session_state.get("current_df") is not None:
+        df = st.session_state.current_df
     if st.session_state.get("is_downsampled", False):
         df = st.session_state.downsampled_df
     if st.session_state.get("detrending_active", False):

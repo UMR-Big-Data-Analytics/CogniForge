@@ -10,18 +10,16 @@ from statsmodels.tsa.stattools import adfuller
 from scipy.stats import linregress
 from utils.session_state_management import update_session_state
 
-"""
-DETRENDING ANALYSIS FEATURES
-====================================
-The code detects trends in time series data and offers methods to remove them using different techniques.
-TREND DETECTION METHODS:
-- Linear regression (R-squared, slope, p-value)
-- Augmented Dickey-Fuller test for stationarity
-- Autocorrelation 
-DETRENDING METHODS:
-- Linear detrending: Removes first-order polynomial trend using division and normalization
-- Moving average detrending: Removes local trends using centered rolling window
-"""
+# DETRENDING ANALYSIS FEATURES
+# ====================================
+# The code detects trends in time series data and offers methods to remove them using different techniques.
+# TREND DETECTION METHODS:
+# - Linear regression (R-squared, slope, p-value)
+# - Augmented Dickey-Fuller test for stationarity
+# - Autocorrelation
+# DETRENDING METHODS:
+# - Linear detrending: Removes first-order polynomial trend using division and normalization
+# - Moving average detrending: Removes local trends using centered rolling window
 def initialize_session_state():
     """Initialize required session state variables if they don't exist."""
     if 'detrend_steps' not in st.session_state:
