@@ -9,7 +9,7 @@ roughness = st.Page("steel_quality/Roughness.py", title="Roughness Estimation", 
 rust = st.Page("steel_quality/Rust.py", title="Rust Detection", icon="🧱")
 wire = st.Page("Wire_Quality/Wire_Quality.py", title="Wire Quality", icon="🔌")
 photo = st.Page("Photo.py", title="Photo Viewer", icon="🖼️")
-fft = st.Page("FFT_Analysis/FFT_Analysis.py",title="FFT Analysis", icon="🧱")
+fft = st.Page("FFT_Analysis/FFT_Analysis.py",title="FFT Analysis", icon="📈")
 
 pg = st.navigation({
     "": [home],
