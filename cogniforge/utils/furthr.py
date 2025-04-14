@@ -1,3 +1,4 @@
+import os
 import tempfile
 from io import BytesIO, StringIO
 import itertools
@@ -7,7 +8,7 @@ import pandas as pd
 import requests
 import streamlit as st
 from furthrmind import Furthrmind as API
-from furthrmind.collection import Experiment, File, Group, ResearchItem, Sample, FieldData
+from furthrmind.collection import Experiment, File, Group, ResearchItem, Sample, FieldData, Project
 from furthrmind.collection.baseclass import BaseClass
 from furthrmind.file_loader import FileLoader
 import config
@@ -145,6 +146,30 @@ class FURTHRmind:
         self.__id = id
         self.fm, _ = get_furthr_client()
 
+    def setup_project(self) -> API:
+        """Setup the project for the API."""
+        fm = API(
+            host="https://furthr.informatik.uni-marburg.de/",
+            api_key=os.getenv("FURTHRMIND_API_KEY"),
+        )
+
+        projects = Project.get_all()
+        project = selectbox(
+            projects, label="Choose a project", key=f"{self.__id}_project"
+        )
+
+        fm = API(
+            host="https://furthr.informatik.uni-marburg.de/",
+            api_key=os.getenv("FURTHRMIND_API_KEY"),
+            project_id=project.id,
+        )
+        return fm
+    
+    def get_group(self) -> Group | None:
+        groups = Group.get_all()
+        group = selectbox(groups, label="Choose a group", key=f"{self.__id}_group")
+        return group
+    
     def select_group(self):
         """Select a group from the project."""
         if self.force_group_id is not None:
@@ -156,6 +181,23 @@ class FURTHRmind:
         if self.__selected is None:
             st.error("No group found")
     
+    def select_experiment(
+        self, group: Group
+    ) -> Experiment | Sample | ResearchItem | None:
+        exp_sam = group.experiments + group.samples
+        for l in list(group.researchitems.values()):
+            exp_sam += l
+        chosen_data: Experiment | Sample | None = selectbox(
+            exp_sam,
+            format_name=lambda o: o.name,
+            label="Choose an experiment/sample",
+            key=f"{self.__id}_experiment",
+        )
+        if chosen_data is None:
+            return None
+        chosen_data = chosen_data.__class__.get(id=chosen_data.id)
+        return chosen_data
+
     def select_container(self):
         """Select a research item, experiment or sample from the group which has a specific attribute and field data"""
         self.select_group()

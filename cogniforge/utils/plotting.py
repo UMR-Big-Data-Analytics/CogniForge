@@ -1,45 +1,86 @@
 import lttb
-import numpy as np
-import pandas as pd
+import plotly.graph_objs as go
+from plotly.subplots import make_subplots
 import streamlit as st
 import plotly.express as px
+import pandas as pd
+import numpy as np
 
-def plot_sampled(df: pd.DataFrame, sampling_size: int = 1000) -> None:
-    columns = df.columns
-    idx = df.index.values
 
-    chosen_columns = st.multiselect("Choose columns", columns, default=columns[0])
-    normalize = st.checkbox("Normalize data", value=False)
-    index_range = st.slider(
-        "Index range",
-        min_value=idx[0],
-        max_value=idx[-1],
-        value=(idx[0], idx[-1]),
-    )
-    idx_sampled = None
-    plotting_dict = {}
+def plot_sampled(df: pd.DataFrame):
+
+    df = st.session_state.current_df
+
+    if st.session_state.get("is_downsampled", False):
+        df = st.session_state.downsampled_df
+    if st.session_state.get("detrending_active", False):
+        df = st.session_state.full_analyzed_df
+    if st.session_state.get("smoothing_active", False):
+        df = st.session_state.full_analyzed_df
+
+    if df is None:
+        st.error("Please load data first using the Load Data Page.")
+        return None
+
+    # ***Dataset Information - Moved and updated***
+    st.write("#### Current Dataset Information")
+    dataset_name = st.session_state.get('current_dataset_name', 'Unnamed Dataset')
+    st.markdown(f"**Dataset Name:** {dataset_name}")
+    st.write(f"Using a dataset with {len(st.session_state.current_df):,} rows")
+
+    # Find the time column (contains 'Zeit')
+    time_column = None
+    for col in df.columns:
+        if 'Zeit' in col:
+            time_column = col
+            break
+
+    if time_column is None:
+        st.error("No column containing 'Zeit' found for time series data.")
+        return
+
+    columns = [col for col in df.columns if col != time_column]
+    chosen_columns = st.multiselect("Choose columns", columns)
+
     if len(chosen_columns) == 0:
         st.error("Please choose at least one column to plot.")
         return
-    for col in chosen_columns:
-        df_range = df[(df.index >= index_range[0]) & (df.index <= index_range[1])]
-        col_with_idx = np.c_[df_range.index.values, df_range[col].values]
-        if sampling_size >= len(col_with_idx):
-            sampled = col_with_idx
-        else:
-            sampled = lttb.downsample(col_with_idx, sampling_size)
-        if idx_sampled is None:
-            idx_sampled = sampled[:, 0]
-        plotting_dict[col] = sampled[:, 1]
-    plotting_dict["Index"] = idx_sampled
 
-    df_plot = pd.DataFrame(plotting_dict).set_index("Index")[chosen_columns]
-    if len(chosen_columns) == 1:
-        # rename columns, remove special characters (https://github.com/streamlit/streamlit/issues/7714)
-        df_plot.columns = df_plot.columns.str.replace("[^a-zA-Z0-9]", "_", regex=True)
-    if normalize:
-        df_plot = (df_plot - df_plot.min()) / (df_plot.max() - df_plot.min())
-    st.line_chart(df_plot)
+    normalize = st.checkbox("Normalize Data")
+
+    plot_df = df.copy()
+    fig = make_subplots(rows=1, cols=1)
+    for col in chosen_columns:
+        y_data = plot_df[col]
+        if normalize:
+            y_data = (y_data - y_data.min()) / (y_data.max() - y_data.min())
+
+        fig.add_trace(
+            go.Scatter(
+                x=plot_df[time_column],
+                y=y_data,
+                name=f"{col} ({'Normalized' if normalize else 'Original'})",
+                mode='lines'
+            )
+        )
+
+    fig.update_layout(
+        height=500,
+        title_text=f"Time Series Plot ({'Normalized' if normalize else 'Original'})",
+        xaxis_title="Time (seconds)" if 'Zeit[(s)]' in time_column else "Time (milliseconds)",
+        yaxis_title="Normalized Values" if normalize else "Original Values",
+        showlegend=True,
+        dragmode='zoom',
+        xaxis=dict(rangeslider=dict(visible=True)),
+        legend=dict(
+            orientation="h",
+            y=1.0,
+            xanchor="center",
+            x=0.5
+        )
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
 
 def plot_xy_chart(df: pd.DataFrame, sampling_size: int = 1000) -> None:
     columns = df.columns

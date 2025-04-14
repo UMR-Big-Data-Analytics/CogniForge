@@ -25,7 +25,6 @@ def get_as_bytes(
 ) -> BytesIO | requests.Response:
     """Get raw bytes via HTTP."""
     response = session.get(url, headers=headers)
-    print(response.raw.version)
     if response.ok:
         return BytesIO(response.content)
     else:

@@ -2,12 +2,14 @@ import os
 import tempfile
 import streamlit as st
 import pandas as pd
+
 from datetime import datetime
 from furthrmind import Furthrmind as API
 from furthrmind.collection import Experiment, Group
 from furthrmind.file_loader import FileLoader
 
-# test test
+
+
 def show_analysis_history():
     """Display the history of analysis steps performed"""
     if st.session_state.analysis_history:
@@ -29,22 +31,34 @@ def setup_upload_location():
         progress_bar.progress(20)
         from utils.furthr import FURTHRmind
         furthr = FURTHRmind(id="upload_widget")
-        furthr.container_category = "experiment"
         st.write("### Select Upload Location")
 
         status_text.text('Loading project settings...')
         progress_bar.progress(60)
-        furthr.select_container()
+
+        col1, col2, col3 = st.columns(3)
+        fm = None
+        group = None
+        experiment = None
+        with col1:
+            fm = furthr.setup_project()
+        if fm:
+            with col2:
+                group = furthr.get_group()
+            print(group)
+            if group:
+                with col3:
+                    experiment = furthr.select_experiment(group)
         status_text.text('Ready for data selection')
         progress_bar.progress(100)
         import time
         time.sleep(0.1)
         progress_bar.empty()
         status_text.empty()
-        return furthr.fm, furthr.selected
+        return fm, group, experiment, furthr
     except Exception as e:
         st.error(f"Error setting up upload location: {str(e)}")
-        return None, None
+        return None, None, None, None
 
 
 def prepare_dataframe(df):
@@ -70,58 +84,101 @@ def prepare_dataframe(df):
     return df
 
 
-def get_upload_data():
-    """Get data to upload based on user selection"""
-    # FIXME upload_choice unused
-    # upload_choice = st.radio(
-    #     "Choose data to upload:",
-    #     ["Current State (with all analyses)",
-    #      "Original Data",
-    #     "Specific Analysis Steps"]
-    # )
-    # TODO: the other 2 options
-    if st.session_state.analysis_history:
-        data_to_upload = st.session_state.df.copy()
-        analysis_types = []
-        if hasattr(st.session_state, 'detrend_steps') and st.session_state.detrend_steps:
-            analysis_types.append("detrend")
-        if hasattr(st.session_state, 'smoothing_steps') and st.session_state.smoothing_steps:
-            analysis_types.append("smooth")
-    else:
-        st.warning("No analysis steps available to select.")
-        analysis_types = []
-        data_to_upload = st.session_state.df.copy()
+def get_upload_data(widget_key_prefix):
+    """Gets data to upload based on user selection."""
+    if 'upload_selection' not in st.session_state:
+        st.session_state.upload_selection = "Current State (with all analyses)"
 
-    return data_to_upload, analysis_types
+    options = ["Current State (with all analyses)", "Original Downloaded Data"]
+    original_data_exists = 'original_df' in st.session_state and not st.session_state.original_df.empty if 'original_df' in st.session_state else False
+    processed_data_exists = 'current_df' in st.session_state and not st.session_state.current_df.empty if 'current_df' in st.session_state else False
+    # if none
+    if not original_data_exists and not processed_data_exists:
+        st.warning("Please load a dataset first.")
+        return None, []
+    # adjust button
+    if not original_data_exists:
+        options.remove("Original Downloaded Data")
+    elif not processed_data_exists:
+        st.session_state.upload_selection = "Original Downloaded Data"
+    elif st.session_state.upload_selection not in options:
+        st.session_state.upload_selection = options[0]
+    main_choice = st.radio(
+        "Choose data to upload:",
+        options,
+        index=options.index(st.session_state.upload_selection),
+        key="upload_data_selection"
+    )
+    st.session_state.upload_selection = main_choice
+    if main_choice == "Original Downloaded Data":
+        df = st.session_state.original_df.copy()
+        st.write(f"Number of observations in original data: {len(df):,}")
+        st.write("Available columns:", ", ".join(df.columns))
+        return df, []
 
-def generate_filename(analysis_types):
-    """Generate filename based on analysis types"""
-    original_filename = st.session_state.get('original_filename', "TS_PL_107")
+    elif main_choice == "Current State (with all analyses)":
+        df = st.session_state.get('full_analyzed_df', st.session_state.current_df).copy()
+        st.write(f"Number of rows: {len(df):,}")
+        st.write("Available columns:", ", ".join(df.columns))
+        return df, []
+    return None, []
+
+
+def generate_filename(analysis_types, widget_key_prefix=""):
+    """Generate filename based on analysis types and selected data source"""
+    original_filename = st.session_state.get('original_filename', "Unknown")
     base_filename = original_filename.rsplit('.', 1)[0]
-    # get file name
-    if not analysis_types:
+    data_source = st.session_state.upload_selection
+    if data_source == "Original Downloaded Data":
         suffix = "original"
-    elif set(analysis_types) == {"detrend", "smooth"}:
+    elif data_source == "Current State (with all analyses)":
         suffix = "analysed"
-    elif "detrend" in analysis_types and "smooth" not in analysis_types:
-        suffix = "detrended"
-    elif "smooth" in analysis_types and "detrend" not in analysis_types:
-        suffix = "smoothed"
     else:
-        suffix = "_".join(analysis_types)
+        suffix = "data"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     generated_filename = f"{base_filename}_{suffix}_{timestamp}.csv"
     st.text(f"Upload filename: {generated_filename}")
     return generated_filename
 
+def upload_data():
+    """Wrapper function for upload process"""
+    try:
+        import time
+        widget_key_prefix = f"upload_{int(time.time())}"
+
+        data_to_upload, analysis_types = get_upload_data(widget_key_prefix)
+        if data_to_upload is None or data_to_upload.empty:
+            st.error("No data available for upload. Please check your data source.")
+            return False
+        filename = generate_filename(analysis_types, widget_key_prefix)
+        with st.spinner("Preparing and uploading data..."):
+            upload_success, message = upload_analyzed_data(
+                analyzed_df=data_to_upload,
+                analysis_name=filename,
+                analysis_history=st.session_state.get('analysis_history', []),
+                original_filename=st.session_state.get('original_filename')
+            )
+        if upload_success:
+            st.success(message)
+            return True
+        else:
+            st.error(message)
+            return False
+    except Exception as e:
+        st.error(f"An unexpected error occurred during upload: {str(e)}")
+        st.exception(e)
+        return False
 
 def upload_analyzed_data(
         analyzed_df: pd.DataFrame,
         analysis_name: str = "analyzed_data",
+        analysis_history: list = None,
+        original_filename: str = None,
         fm: API = None,
+        group: Group = None,
         experiment: Experiment = None
 ) -> tuple[bool, str]:
-    """Upload analyzed data to FURTHRmind without repeating folder selection."""
+    """Upload analyzed data to FURTHRmind."""
     try:
         status_placeholder = st.empty()
         progress_placeholder = st.empty()
@@ -133,7 +190,7 @@ def upload_analyzed_data(
             raise ValueError("Input must be a pandas DataFrame")
         if len(analyzed_df.columns) == 0:
             raise ValueError("DataFrame contains no columns")
-        if not all([fm, experiment]):
+        if not all([fm, group, experiment]):
             raise ValueError("Upload location information is missing")
 
         new_filename = analysis_name
@@ -162,7 +219,6 @@ def upload_analyzed_data(
                 raise ConnectionError("File upload failed - no response from server")
 
         progress_placeholder.progress(1.0)
-        # Prepare success message
         success_message = (
             f"✅ Upload completed successfully!\n\n"
             f"File: {new_filename}\n"
@@ -173,10 +229,9 @@ def upload_analyzed_data(
         if isinstance(e, ValueError):
             error_message = f"Data validation error: {str(e)}"
         elif isinstance(e, ConnectionError):
-            error_message = f"Connection error: {str(e)}\nPlease verify your internet connection and FURTHRmind server status."
+            error_message = f"Connection error"
         else:
             error_message = f"Upload failed: {str(e)}"
 
         return False, error_message
-
 
