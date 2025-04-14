@@ -50,145 +50,131 @@ def normalize_array(arr):
     max_value = np.max(arr)
     return (arr - min_value) / (max_value - min_value) if max_value > min_value else np.zeros_like(arr)
 
-###############################################################################
-# Step Control Initialization
+# Ensure latest_fft is initialized in session state
+if "latest_fft" not in st.session_state:
+    st.session_state["latest_fft"] = {
+        "experiment_name": None,
+        "output_folder": None
+    }
 
-if "step" not in st.session_state:
-    st.session_state.step = "select_experiment"
-if "output_folder" not in st.session_state:
-    st.session_state.output_folder = "C:\\FFT_Results"
+st.title("FFT Analysis")
 
-###############################################################################
-# STEP 1: Select Experiment and Analyze
+csv_widget = FURTHRmind(id="experiment")
+csv_widget.container_category = "experiment"
+csv_widget.file_extension = "csv"
+csv_widget.select_container()
 
-if st.session_state.step == "select_experiment":
-    st.title("Step 1: Select Experiment for FFT Analysis")
-    csv_widget = FURTHRmind(id="experiment")
-    csv_widget.container_category = "experiment"
-    csv_widget.file_extension = "csv"
-    csv_widget.select_container()
+if st.button("Perform Analysis"):
+    if csv_widget.selected:
+        experiment = csv_widget.selected.get()
+        experiment_name = experiment.name
+        output_folder = os.path.join("C:\\FFT_Results", experiment_name)
+        os.makedirs(output_folder, exist_ok=True)
 
-    if st.button("Perform FFT Analysis"):
-        if csv_widget.selected:
-            st.session_state.selected_experiment = csv_widget.selected.get()
-            st.session_state.step = "analyze"
-            st.rerun()
+        csv_files = [file for file in experiment.files if file.name.endswith('.csv')]
+        if not csv_files:
+            st.warning(f"No CSV files in {experiment_name}")
         else:
-            st.warning("Please select an experiment folder.")
-
-###############################################################################
-# STEP 2: Run FFT Analysis
-
-elif st.session_state.step == "analyze":
-    experiment = st.session_state.selected_experiment
-    output_folder = st.session_state.output_folder
-    os.makedirs(output_folder, exist_ok=True)
-    csv_files = [file for file in experiment.files if file.name.endswith('.csv')]
-
-    if not csv_files:
-        st.warning("No CSV files found in the selected experiment.")
-        st.stop()
-
-    for file in csv_files:
-        try:
-            csv_bytes, _ = download_item_bytes(file)
-            csv_text = csv_bytes.getvalue().decode('utf-8')
-            headers_and_units = [line.strip().split(';') for line in csv_text.splitlines()[:2]]
-            headers = [f"{item1}_{item2}" for item1, item2 in zip(headers_and_units[0], headers_and_units[1])]
-
-            csvdata = pd.read_csv(StringIO(csv_text), delimiter=';', decimal=',', header=2)
-            csvdata.columns = headers
-
-            voltage_col = csvdata.columns[csvdata.columns.str.contains('volt|spannung', case=False)]
-            current_col = csvdata.columns[csvdata.columns.str.contains('current|ampere|amperage|strom', case=False)]
-            time_col = csvdata.columns[csvdata.columns.str.contains('time|zeit', case=False)]
-
-            if not voltage_col.empty and not current_col.empty and not time_col.empty:
-                resistance = calculate_resistance(csvdata[voltage_col].values, csvdata[current_col].values)
-                Fs = calculate_Fs(csvdata[time_col].values)
-                power_values, fft_bins, _ = fftit(resistance, Fs, lbFreq=100, ubFreq=10000)
-                norm_power = normalize_array(power_values)
-                peak_index = np.argmax(power_values)
-
-                if peak_index > 0:
-                    peak_freq = fft_bins[peak_index]
-                    peak_power = power_values[peak_index]
-                    peak_norm = norm_power[peak_index]
-
-                    fit_range = peak_freq * 0.4
-                    fit_indices = (fft_bins >= peak_freq - fit_range) & (fft_bins <= peak_freq + fit_range)
-                    fit_freqs = fft_bins[fit_indices]
-                    fit_amps = norm_power[fit_indices]
-
-                    initial_guess = [peak_norm, peak_freq, 1]
-                    popt, _ = curve_fit(gaussian, fit_freqs, fit_amps, p0=initial_guess)
-
-                    plt.figure(figsize=(10, 6))
-                    plt.plot(fft_bins, norm_power[:len(fft_bins)], label='FFT Magnitude')
-                    plt.plot(np.linspace(0, peak_freq + 1000, 500), gaussian(np.linspace(0, peak_freq + 1000, 500), *popt), color='red', label='Gaussian Fit')
-                    plt.axvline(popt[1], color='green', linestyle='--', label='Mean')
-                    plt.axvline(popt[1] + popt[2], color='orange', linestyle=':', label='Mean + Std Dev')
-                    plt.axvline(popt[1] - popt[2], color='orange', linestyle=':', label='Mean - Std Dev')
-                    plt.title(f'FFT Analysis: {file.name[:-4]}')
-                    plt.xlabel('Frequency (Hz)')
-                    plt.ylabel('Normalized Power')
-                    plt.legend()
-                    plt.grid()
-
-                    plot_path = os.path.join(output_folder, f"{file.name[:-4]}_FFT_Analysis.png")
-                    plt.savefig(plot_path)
-                    plt.close()
-
-        except Exception as e:
-            st.error(f"Error processing {file.name}: {e}")
-
-    st.success("FFT analysis completed and plots saved.")
-    st.session_state.step = "upload"
-    st.rerun()
-
-###############################################################################
-# STEP 3: Upload to Cloud
-
-elif st.session_state.step == "upload":
-    st.title("Step 2: Upload FFT Results to FURTHRmind")
-
-    upload_widget = FURTHRmind(id="experiment_upload")
-    upload_widget.container_category = "experiment"
-    upload_widget.file_extension = "png"
-    upload_widget.select_container()
-
-    project_details = upload_widget.setup_project()
-    file_loader = FileLoader(project_details.host, project_details.api_key)
-
-    # Button to trigger the upload process
-    if st.button("Upload Results"):
-        if upload_widget.selected:
-            uploaded_count = 0
-            experiment = upload_widget.selected.get()  # Retrieve the full Experiment object
-
-            for file_name in os.listdir(st.session_state.output_folder):
-                print(file_name)
-                if file_name.endswith("_FFT_Analysis.png"):
-                    local_path = os.path.join(st.session_state.output_folder, file_name)
-                    print(local_path)
-                    try:
-                        experiment.add_file(local_path)  # ✅ pass path directly!
-                        uploaded_count += 1
-                    except Exception as e:
-                        st.error(f"Upload failed for {file_name}: {e}")
-                    
-            if uploaded_count:
-                st.success(f"Uploaded {uploaded_count} FFT result images to the experiment.")
-
-                # Clean up the local result folder
-                for file_name in os.listdir(st.session_state.output_folder):
-                    os.remove(os.path.join(st.session_state.output_folder, file_name))
+            for file in csv_files:
                 try:
-                    os.rmdir(st.session_state.output_folder)
-                    st.info("Local result folder cleaned up.")
+                    csv_bytes, _ = download_item_bytes(file)
+                    csv_text = csv_bytes.getvalue().decode('utf-8')
+                    headers_and_units = [line.strip().split(';') for line in csv_text.splitlines()[:2]]
+                    headers = [f"{item1}_{item2}" for item1, item2 in zip(headers_and_units[0], headers_and_units[1])]
+
+                    csvdata = pd.read_csv(StringIO(csv_text), delimiter=';', decimal=',', header=2)
+                    csvdata.columns = headers
+
+                    voltage_col = csvdata.columns[csvdata.columns.str.contains('volt|spannung', case=False)]
+                    current_col = csvdata.columns[csvdata.columns.str.contains('current|ampere|amperage|strom', case=False)]
+                    time_col = csvdata.columns[csvdata.columns.str.contains('time|zeit', case=False)]
+
+                    if not voltage_col.empty and not current_col.empty and not time_col.empty:
+                        resistance = calculate_resistance(csvdata[voltage_col].values, csvdata[current_col].values)
+                        Fs = calculate_Fs(csvdata[time_col].values)
+                        power_values, fft_bins, _ = fftit(resistance, Fs, lbFreq=100, ubFreq=10000)
+                        norm_power = normalize_array(power_values)
+                        peak_index = np.argmax(power_values)
+
+                        if peak_index > 0:
+                            peak_freq = fft_bins[peak_index]
+                            peak_power = power_values[peak_index]
+                            peak_norm = norm_power[peak_index]
+
+                            fit_range = peak_freq * 0.4
+                            fit_indices = (fft_bins >= peak_freq - fit_range) & (fft_bins <= peak_freq + fit_range)
+                            fit_freqs = fft_bins[fit_indices]
+                            fit_amps = norm_power[fit_indices]
+
+                            initial_guess = [peak_norm, peak_freq, 1]
+                            popt, _ = curve_fit(gaussian, fit_freqs, fit_amps, p0=initial_guess)
+
+                            plt.figure(figsize=(10, 6))
+                            plt.plot(fft_bins, norm_power[:len(fft_bins)], label='FFT Magnitude')
+                            plt.plot(np.linspace(0, peak_freq + 1000, 500), gaussian(np.linspace(0, peak_freq + 1000, 500), *popt), color='red', label='Gaussian Fit')
+                            plt.axvline(popt[1], color='green', linestyle='--', label='Mean')
+                            plt.axvline(popt[1] + popt[2], color='orange', linestyle=':', label='Mean + Std Dev')
+                            plt.axvline(popt[1] - popt[2], color='orange', linestyle=':', label='Mean - Std Dev')
+                            plt.title(f'FFT Analysis: {file.name[:-4]}')
+                            plt.xlabel('Frequency (Hz)')
+                            plt.ylabel('Normalized Power')
+                            plt.legend()
+                            plt.grid()
+
+                            plot_path = os.path.join(output_folder, f"{file.name[:-4]}_FFT_Analysis.png")
+                            plt.savefig(plot_path)
+                            plt.close()
+
                 except Exception as e:
-                    st.warning(f"Cleanup issue: {e}")
+                    st.error(f"Error processing {file.name}: {e}")
+
+            # Update session state after FFT analysis
+            st.session_state["latest_fft"].update({
+                "experiment_name" : experiment_name,
+                "output_folder" : output_folder
+            })
+            st.success(f"FFT done for: {experiment_name}")
+    else:
+        st.warning("Please select an experiment")
+
+# Show upload section only if a recent FFT analysis exists
+if st.session_state["latest_fft"]["experiment_name"]:
+    with st.expander("🔼 Upload FFT Results to FURTHRmind", expanded=True):
+        st.subheader(f"Upload Result for: `{st.session_state['latest_fft']['experiment_name']}`")
+
+        upload_widget = FURTHRmind(id="experiment_upload")
+        upload_widget.container_category = "experiment"
+        upload_widget.file_extension = "png"
+        upload_widget.select_container()
+
+        if st.button("Upload Results"):
+            if upload_widget.selected:
+                upload_exp = upload_widget.selected.get()
+                uploaded_count = 0
+                output_folder = st.session_state["latest_fft"]["output_folder"]
+
+                for fname in os.listdir(output_folder):
+                    if fname.endswith("_FFT_Analysis.png"):
+                        fpath = os.path.join(output_folder, fname)
+                        try:
+                            upload_exp.add_file(fpath)
+                            uploaded_count += 1
+                        except Exception as e:
+                            st.error(f"Failed to upload {fname}: {e}")
+
+                if uploaded_count:
+                    st.success(f"Uploaded {uploaded_count} FFT result(s).")
+
+                    # Clean up
+                    for f in os.listdir(output_folder):
+                        os.remove(os.path.join(output_folder, f))
+                    os.rmdir(output_folder)
+
+                    # Reset session
+                    st.session_state["latest_fft"] = {
+                        "experiment_name": None,
+                        "output_folder": None
+                    }
+                    st.info("Local results cleaned after upload.")
             else:
-                st.warning("No PNG images were uploaded.")
-        else:
-            st.warning("Please select a destination experiment.")
+                st.warning("Please select a destination experiment.")
