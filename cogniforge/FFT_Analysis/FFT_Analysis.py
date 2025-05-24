@@ -11,9 +11,6 @@ from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 from cogniforge.utils.furthr import FURTHRmind, download_item_bytes
 import streamlit as st
-from furthrmind.file_loader import FileLoader
-from furthrmind import Furthrmind as API
-from furthrmind.collection import Experiment
 
 
 ###############################################################################
