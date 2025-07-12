@@ -130,7 +130,6 @@ def show_and_upload_anomaly(scores, filename, algorithm_name):
             st.exception(upload_error)
 
 
-#st.set_page_config(page_title="CogniForge | Layer Thickness", page_icon="💦")
 st.write("# Layer Thickness")
 st.write(
     "Welcome to the Layer Thickness tool. Here you can analyze and visualize the thickness of your layer"
@@ -228,9 +227,6 @@ elif mode == "Batch Folder" and st.session_state.files_loaded is not None:
             csv_bytes, _ = download_item_bytes(file)
             csv_text = csv_bytes.getvalue().decode("utf-8")
             df = pd.read_csv(io.StringIO(csv_text), delimiter=';',decimal=',',header=2)
-
-            # dl = DataLoader(csv=csv_io)
-            # df = dl.get_processedDataFrame()
 
             if df is not None:
                 batch_dataframes[file.name] = df

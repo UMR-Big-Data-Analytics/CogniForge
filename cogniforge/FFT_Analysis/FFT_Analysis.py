@@ -72,7 +72,10 @@ if st.button("Perform Analysis"):
         if not csv_files:
             st.warning(f"No CSV files in {experiment_name}")
         else:
-            for file in csv_files:
+
+            progress_bar = st.progress(0)
+            total_files = len(csv_files)
+            for i, file in enumerate(csv_files):
                 try:
                     csv_bytes, _ = download_item_bytes(file)
                     csv_text = csv_bytes.getvalue().decode('utf-8')
@@ -121,6 +124,8 @@ if st.button("Perform Analysis"):
                             plot_path = os.path.join(output_folder, f"{file.name[:-4]}_FFT_Analysis.png")
                             plt.savefig(plot_path)
                             plt.close()
+                            progress_bar.progress((i + 1) / total_files)
+
 
                 except Exception as e:
                     st.error(f"Error processing {file.name}: {e}")
