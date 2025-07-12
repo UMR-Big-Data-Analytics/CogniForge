@@ -1,334 +1,135 @@
-import datetime as dt
-import io
-import os
-import shutil
-import time
-import sys
-
-import lttb
-import numpy as np
-import pandas as pd
 import streamlit as st
-import plotly.express as px
-import plotly.graph_objects as go
-from cogniforge.utils.furthr import FURTHRmind, download_item_bytes
-
-sys.path.append("../cogniforge")
-from cogniforge.algorithms.anomaly_detection import (
-    AnomalyDetector,
-    AutoTSADAnomalyDetector,
-    IsolationForestAnomalyDetector,
-    KMeansAnomalyDetector,
-)
-from cogniforge.utils.dataloader import DataLoader
-from cogniforge.utils.furthr import FURTHRmind
-from cogniforge.utils.object_select_box import selectbox
-from cogniforge.utils.plotting import plot_sampled, plot_xy_chart
-from cogniforge.utils.state_button import button
+import pandas as pd
+import torch
+import torch.nn as nn
 import config
-
-def save_univariate_time_series(df: pd.DataFrame, selected_column: str, output_path: str):
-    if df.index.name is not None:
-        df.reset_index(inplace=True)
-    zeit_column = next(
-    (col for col in df.columns if col.lower().startswith(("Zeit", "Time"))), 
-    df.columns[0]  # Default to the first column if no match is found
-    )
-    univariate_df = pd.DataFrame({
-        "timestamp": df[zeit_column],  # Generate sequential timestamps
-        f"value-0": df[selected_column]
-    })
-
-    # Save to CSV
-    univariate_df.to_csv(output_path, index=False, header=True)
-
-def plot_anomaly_detection(anomaly_score: np.ndarray,threshold: float = 0.6) -> np.ndarray:
-    zeit_column = next(
-    (col for col in df.columns if col.lower().startswith(("Zeit", "Time"))), 
-    df.columns[0]  # Default to the first column if no match is found
-    )
-
-    # Extract the Zeit column values
-    zeit_values = df[zeit_column].values.astype(np.float32)[: len(anomaly_score)]
-    if len(anomaly_score) > 1000:
-        anomaly_score_downsampled = lttb.downsample(
-            np.c_[
-                zeit_values,
-                anomaly_score,
-            ],
-            1000,
-        )
-    else: 
-        anomaly_score_downsampled = np.c_[zeit_values, anomaly_score]
-    df_plot = pd.DataFrame(
-        {
-            "Zeit": anomaly_score_downsampled[:, 0],
-            "Anomaly Score": anomaly_score_downsampled[:, 1],
-        }
-    ).set_index("Zeit")
-
-    # Categorize points based on threshold
-    df_plot["Color"] = np.where(df_plot["Anomaly Score"] > threshold,f"Above {threshold}", f"Below {threshold}")
-
-    # Plot with Plotly
-    fig = px.scatter(df_plot.reset_index(), x="Zeit", y="Anomaly Score", color="Color",
-                     color_discrete_map={f"Above {threshold}": "red", f"Below {threshold}": "blue"},
-                     title="Anomaly Score Visualization")
-
-    # Display in Streamlit
-    st.plotly_chart(fig)
-
-    return anomaly_score
-
-def run_anomaly_analysis(df, filtered_columns, filename, mode="Single File"):
-    if mode == "Single File":
-        available_algorithms = [KMeansAnomalyDetector(), AutoTSADAnomalyDetector(), IsolationForestAnomalyDetector()]
-    else:  # Batch Mode
-        available_algorithms = [KMeansAnomalyDetector(), IsolationForestAnomalyDetector()]
-
-    algorithm: AnomalyDetector = selectbox(
-        available_algorithms,
-        format_name=lambda a: a.name(),
-        label=f"Choose an anomaly detector for {filename}",
-        key=f"algorithm_{filename}"
-    )
-
-    if isinstance(algorithm, AutoTSADAnomalyDetector) and mode == "Batch Folder":
-        st.warning("AutoTSAD is not available in batch mode.")
-        return
-
-    if isinstance(algorithm, AutoTSADAnomalyDetector):
-        column_name = st.selectbox("Select a column for AutoTSAD", filtered_columns, key=f"col_{filename}")
-        if button(f"Run {algorithm.name()} on {filename}", f"run_autotsad_{filename}", True):
-            temp_csv_path = f"{filename}_temp_univariate.csv"
-            save_univariate_time_series(df, column_name, temp_csv_path)
-            scores = algorithm.detect(temp_csv_path)
-            show_and_upload_anomaly(scores, filename, algorithm.name())
-    else:
-        column_names = st.multiselect(
-            f"Choose columns for {filename}", filtered_columns, default=filtered_columns, key=f"cols_{filename}"
-        )
-        if button(f"Run {algorithm.name()} on {filename}", f"run_algorithm_{filename}", True):
-            try:
-                scores = algorithm.detect(df[column_names].values)
-                show_and_upload_anomaly(scores, filename, algorithm.name())
-            except Exception as e:
-                st.error(f"Error running {algorithm.name()} on {filename}: {e}")
+from utils.furthr import FURTHRmind
+from utils.dataloader import DataLoader
 
 
-def show_and_upload_anomaly(scores, filename, algorithm_name):
-    threshold = st.slider("Set anomaly threshold", 0.0, 1.0, 0.6, key=f"threshold_{filename}")
-    plot_anomaly_detection(scores, threshold)
-    with st.expander("Upload Anomaly Score", expanded=True):
-        try:
-            FURTHRmind("upload").upload_csv(
-                pd.DataFrame({"score": scores, "is_anomaly": scores > threshold}),
-                f"{filename}-anomaly_score-{algorithm_name}-{dt.datetime.now().strftime('%Y-%m-%dT%H-%M-%S')}"
-            )
-        except Exception as upload_error:
-            st.error(f"Upload error: {str(upload_error)}")
-            st.exception(upload_error)
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-torch.log(torch.tensor(10000.0)) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(1)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        x = x.permute(1, 0, 2)
+        x = x + self.pe[:x.size(0)]
+        return self.dropout(x).permute(1, 0, 2)
+
+class TransformerEncoderRegressor(nn.Module):
+    def __init__(self, num_features=4, d_model=512, window_size=202, num_heads=8, num_layers=2, dim_feedforward=512, dropout=0.1):
+        super(TransformerEncoderRegressor, self).__init__()
+        self.embedding = nn.Linear(num_features, d_model)
+        self.pos_encoder = PositionalEncoding(d_model=d_model, max_len=5000, dropout=dropout)
+        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=num_heads,
+                                                   dim_feedforward=dim_feedforward, dropout=dropout)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.fc = nn.Linear(d_model * window_size, 1)
+
+    def forward(self, x):
+        x = self.embedding(x)
+        x = self.pos_encoder(x)
+        x = self.transformer_encoder(x)
+        x = x.reshape(x.size(0), -1)
+        return self.fc(x)
 
 
-st.write("# Layer Thickness")
-st.write(
-    "Welcome to the Layer Thickness tool. Here you can analyze and visualize the thickness of your layer"
-)
-st.write(
-    f"Upload your data to the [FURTHRmind]({config.furthr['host']}) database. Then, here, you can choose the correct dataset and let our algorithms tell you the quality of your layer."
-)
 
-if "latest_results" not in st.session_state:
-    st.session_state["latest_results"] = {
-        "experiment_name" : None,
-        "output_folder" : None
-    }
+def predict_and_append(model, df, window_size=202):
+    if df.shape[1] < 4:
+        raise ValueError("Data must have at least 4 columns.")
+    data = df.iloc[:, :4].values  # Take first 202 rows and 4 columns
+    num_samples = data.shape[0] // window_size
+    predictions = []
+    for i in range(num_samples):
+        start = i * window_size
+        end = start + window_size
+        chunk = data[start:end]
+        tensor = torch.tensor(chunk, dtype=torch.float32).unsqueeze(0)  # shape: (1, 202, 4)
+        with torch.no_grad():
+            prediction = model(tensor).item()
+        predictions.extend([prediction] * window_size)
+    
+    
+    # For leftover rows at the end, if any
+    remainder = data.shape[0] % window_size
+    if remainder:
+        predictions.extend([None] * remainder)  # Or extrapolate if needed
 
-if "fileName" not in st.session_state:
-    st.session_state.fileName = None
-if "data" not in st.session_state:
-    st.session_state.data = None
-if "files_loaded" not in st.session_state:
-    st.session_state.files_loaded = False 
+    df["Predicted Thickness"] = predictions
+    return df
+
+def load_model_from_bytes(model_bytes):
+    model = TransformerEncoderRegressor()
+    state_dict = torch.load(model_bytes, map_location=torch.device("cpu"))
+    model.load_state_dict(state_dict)
+    model.eval()
+    return model
+
+
+
+st.title("Layer Thickness Tool")
+st.write("Welcome! Upload your data from [FURTHRmind]({}) to analyze layer thickness.".format(config.furthr['host']))
+
+# Session state
+for key in ["fileName", "data", "files_loaded"]:
+    if key not in st.session_state:
+        st.session_state[key] = None if key != "files_loaded" else False
+
+# File Downloader
 with st.status("Download Data from FURTHRmind", expanded=True):
-    mode = st.radio("Select Mode", ["Single File", "Batch Folder"],horizontal=True)
-    if mode == "Single File":
-        downloader = FURTHRmind("download")
-        downloader.file_extension = "csv"
-        downloader.select_file()
-        st.session_state.data = None
-        data, filename = downloader.download_string_button() or (None, None)
-        print(data)
+    downloader = FURTHRmind("download")
+    downloader.file_extension = "csv"
+    downloader.select_file()
+    data, filename = downloader.download_string_button() or (None, None)
+
+    if data:
         st.session_state.data = data
         st.session_state.fileName = filename
-    elif mode == "Batch Folder":
-        st.session_state.data = None
-        st.session_state.fileName = None
-        folder_widget = FURTHRmind(id="experiment")
-        folder_widget.container_category = "experiment"
-        folder_widget.file_extension = "csv"
-        folder_widget.select_container()
+        st.success("Data downloaded!")
 
-        experiment = folder_widget.selected.get()
-        if experiment:
-            csv_files = [file for file in experiment.files if file.name.endswith('.csv')]
-            if csv_files:
-                st.markdown(f"**📂{len(experiment.files)} CSV files found in the {experiment.name} folder.**")
-                st.session_state.files_loaded = experiment
-            else:
-                st.warning(f"No CSV files in {experiment.name}")
-
-        
-
-if "anomalyNameChanged" not in st.session_state:
-    st.session_state.anomalyNameChanged = False
-if "anomaly_score" not in st.session_state:
-    st.session_state.anomaly_score = None
-    st.session_state.anomaly_algorithm = None
-if mode=="Single File" and st.session_state.data is not None:
-    st.success("Data downloaded!")
-    st.session_state.fileName = filename
-    print(st.session_state.data)
-    tabs = st.tabs(["Data Preview", "Plot Data", "Analysis"])
+# Tabs for Data Preview and Prediction
+if st.session_state.data:
+    tabs = st.tabs(["Data Preview", "Layer Prediction"])
     with tabs[0]:
         dl = DataLoader(csv=st.session_state.data)
         df = dl.get_processedDataFrame()
 
-    if st.session_state.data is not None and df is not None:
-        filtered_columns = [col for col in df.columns if not col.lower().startswith(("zeit", "time"))]
-        with tabs[1]:
-                 plot_xy_chart(df)
 
-        with tabs[2]:
-            run_anomaly_analysis(df, filtered_columns, st.session_state.fileName, mode="Single File")
+    with tabs[1]:
+        st.write("## Layer Thickness Prediction")
 
-elif mode == "Batch Folder" and st.session_state.files_loaded is not None:
-    
-    experiment = st.session_state.files_loaded
-    experiment_name = experiment.name
-    # Prepare once
-    batch_dataframes = {}
-    filtered_columns_dict = {}
+        model_downloader = FURTHRmind("model_download")
+        model_downloader.file_extension = "pth"
+        model_downloader.select_file()
+        model_data, model_name = model_downloader.download_bytes_button() or (None, None)
 
-    # Select algorithm
-    available_algorithms = [KMeansAnomalyDetector(), IsolationForestAnomalyDetector()]
-    algorithm: AnomalyDetector = selectbox(
-        available_algorithms,
-        format_name=lambda a: a.name(),
-        label="Choose an anomaly detector for all files",
-        key="batch_algorithm_selector"
-    )
-
-    threshold = st.slider("Set anomaly threshold", 0.0, 1.0, 0.6, key=f"threshold_")
-
-    # Load all data first
-    for file in experiment.files:
-        try:
-            csv_bytes, _ = download_item_bytes(file)
-            csv_text = csv_bytes.getvalue().decode("utf-8")
-            df = pd.read_csv(io.StringIO(csv_text), delimiter=';',decimal=',',header=2)
-
-            if df is not None:
-                batch_dataframes[file.name] = df
-                filtered_columns = [col for col in df.columns if not col.lower().startswith(("zeit", "time"))]
-                filtered_columns_dict[file.name] = filtered_columns
-        except Exception as e:
-            st.error(f"Error loading {file.name}: {e}")
-
-    # Only show analysis options after loading
-    st.subheader("Batch Analysis ")
-    
-    if st.button("Run Batch Anomaly Detection"):
-        # Define output folder for saving results
-        output_folder = os.path.join("C:\\Anomaly_Results", experiment.name)
-        os.makedirs(output_folder, exist_ok=True)
-
-        # 🧹 Clean up any old files in the output folder before starting a new run
-        for old_file in os.listdir(output_folder):
-            old_path = os.path.join(output_folder, old_file)
+        if model_data:
             try:
-                os.remove(old_path)
-            except Exception as e:
-                st.warning(f"Failed to delete old file {old_file}: {e}")
-        
-        progress_bar = st.progress(0)
-        total_files = len(experiment.files)
-        
-        for i, file in enumerate(experiment.files):
-            try:
-                df = batch_dataframes.get(file.name)
-                if df is None:
-                    continue
-                    
-                filtered_columns = filtered_columns_dict.get(file.name, [])
-                
-                # Calculate the anomaly scores
-                scores = algorithm.detect(df[filtered_columns].values)
-                
-                # Create a DataFrame with scores and anomalies
-                result_df = pd.DataFrame({
-                    "score": scores,
-                    "is_anomaly": scores > threshold
-                })
+                model = load_model_from_bytes(model_data)
+                st.success(f"Model '{model_name}' loaded successfully!")
 
-                # Define file path to save the anomaly results
-                save_path = os.path.join(
-                    output_folder,
-                    f"{experiment.name}-anomaly_score-{algorithm.name()}-{file.name}-{dt.datetime.now().strftime('%Y-%m-%dT%H-%M-%S')}.csv"
-                )
-                
-                # Save the result to a CSV file
-                result_df.to_csv(save_path, index=False)
-                
-                st.success(f"Processed {file.name} -> {save_path}")
-                progress_bar.progress((i + 1) / total_files)
+                if st.button("Predict Layer Thickness"):
+                    try:
+
+                        result_df = predict_and_append(model, df)
+                        st.write("### Prediction Results")
+                        st.dataframe(result_df)
+
+                        csv = result_df.to_csv(index=False).encode("utf-8")
+                        st.download_button("Download with Predictions", csv, file_name="predicted_output.csv")
+
+                    except Exception as e:
+                        st.error(f"An error occurred during prediction: {e}")
 
             except Exception as e:
-                st.error(f"Error processing {file.name}: {e}")
-        
-        st.session_state["latest_results"].update({
-            "experiment_name" : experiment_name,
-            "output_folder" : output_folder
-        })
-
-    if st.session_state["latest_results"]["experiment_name"]:
-        with st.expander("🔼 Upload Anomaly results to FURTHRmind", expanded=True):
-            st.subheader(f"Upload Result for: `{st.session_state['latest_results']['experiment_name']}`")
-
-            upload_widget = FURTHRmind(id="experiment_upload")
-            upload_widget.container_category = "experiment"
-            upload_widget.file_extension = "csv"
-            upload_widget.select_container()
-
-            if st.button("Upload Results"):
-                if upload_widget.selected:
-                    upload_exp = upload_widget.selected.get()
-                    uploaded_count = 0
-                    output_folder = st.session_state["latest_results"]["output_folder"]
-
-                    for fname in os.listdir(output_folder):
-                        if fname.startswith(f"{experiment_name}-anomaly_score"):
-                            fpath = os.path.join(output_folder, fname)
-                            try:
-                                upload_exp.add_file(fpath)
-                                uploaded_count += 1
-                            except Exception as e:
-                                st.error(f"Failed to upload {fname}: {e}")
-
-                    if uploaded_count:
-                        st.success(f"Uploaded {uploaded_count} Anomaly result(s).")
-
-                        # Clean up
-                        for f in os.listdir(output_folder):
-                            os.remove(os.path.join(output_folder, f))
-                        os.rmdir(output_folder)
-
-                        # Reset session
-                        st.session_state["latest_results"] = {
-                            "experiment_name": None,
-                            "output_folder": None
-                        }
-                        st.info("Local results cleaned after upload.")
-                    else:
-                        st.warning("Please select a destination experiment.")
-
+                st.error(f"Prediction Error: {e}")
