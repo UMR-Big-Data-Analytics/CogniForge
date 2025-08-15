@@ -51,8 +51,11 @@ def normalize_array(arr):
 if "latest_fft" not in st.session_state:
     st.session_state["latest_fft"] = {
         "experiment_name": None,
-        "output_folder": None
+        "output_folder": None,
+        "plots": []
     }
+if "page_number" not in st.session_state:
+    st.session_state.page_number = 0
 
 st.title("FFT Analysis")
 
@@ -72,7 +75,7 @@ if st.button("Perform Analysis"):
         if not csv_files:
             st.warning(f"No CSV files in {experiment_name}")
         else:
-
+            plots = []
             progress_bar = st.progress(0)
             total_files = len(csv_files)
             for i, file in enumerate(csv_files):
@@ -123,6 +126,11 @@ if st.button("Perform Analysis"):
 
                             plot_path = os.path.join(output_folder, f"{file.name[:-4]}_FFT_Analysis.png")
                             plt.savefig(plot_path)
+                            
+                            buf = BytesIO()
+                            plt.savefig(buf, format="png")
+                            plots.append({"name": file.name, "image": buf})
+                            
                             plt.close()
                             progress_bar.progress((i + 1) / total_files)
 
@@ -133,7 +141,8 @@ if st.button("Perform Analysis"):
             # Update session state after FFT analysis
             st.session_state["latest_fft"].update({
                 "experiment_name" : experiment_name,
-                "output_folder" : output_folder
+                "output_folder" : output_folder,
+                "plots": plots
             })
             st.success(f"FFT done for: {experiment_name}")
     else:
@@ -141,6 +150,54 @@ if st.button("Perform Analysis"):
 
 # Show upload section only if a recent FFT analysis exists
 if st.session_state["latest_fft"]["experiment_name"]:
+    
+    if "view_plot" not in st.session_state:
+        st.session_state.view_plot = -1
+
+    def view_button_clicked(i):
+        st.session_state.view_plot = i
+
+    plots = st.session_state["latest_fft"]["plots"]
+    
+    if len(plots) > 10:
+        plots_per_page = 10
+        num_pages = (len(plots) + plots_per_page - 1) // plots_per_page
+        
+        st.write(f"Page {st.session_state.page_number + 1} of {num_pages}")
+        
+        start_index = st.session_state.page_number * plots_per_page
+        end_index = start_index + plots_per_page
+        
+        paginated_plots = plots[start_index:end_index]
+        
+        for i, plot_data in enumerate(paginated_plots):
+            col1, col2 = st.columns([4,1])
+            with col1:
+                st.write(plot_data["name"])
+            with col2:
+                st.button("View", key=f"view_button_{start_index + i}", on_click=view_button_clicked, args=(start_index + i,))
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.session_state.page_number > 0:
+                if st.button("Previous"):
+                    st.session_state.page_number -= 1
+        with col2:
+            if st.session_state.page_number < num_pages - 1:
+                if st.button("Next"):
+                    st.session_state.page_number += 1
+    else:
+        for i, plot_data in enumerate(plots):
+            col1, col2 = st.columns([4,1])
+            with col1:
+                st.write(plot_data["name"])
+            with col2:
+                st.button("View", key=f"view_button_{i}", on_click=view_button_clicked, args=(i,))
+
+    if st.session_state.view_plot != -1:
+        st.image(plots[st.session_state.view_plot]["image"])
+
+
     with st.expander("🔼 Upload FFT Results to FURTHRmind", expanded=True):
         st.subheader(f"Upload Result for: `{st.session_state['latest_fft']['experiment_name']}`")
 
@@ -175,8 +232,10 @@ if st.session_state["latest_fft"]["experiment_name"]:
                     # Reset session
                     st.session_state["latest_fft"] = {
                         "experiment_name": None,
-                        "output_folder": None
+                        "output_folder": None,
+                        "plots": []
                     }
+                    st.session_state.page_number = 0
                     st.info("Local results cleaned after upload.")
             else:
                 st.warning("Please select a destination experiment.")
