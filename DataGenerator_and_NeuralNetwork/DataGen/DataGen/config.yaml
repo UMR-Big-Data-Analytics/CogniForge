@@ -1,0 +1,87 @@
+data: #handles files and their csv-subfiles that are in the 'data-directory'
+  mode: seed_data #seed_data or dummy_data
+  datapath: 'data' #folder with subfilders for csv files
+   #looks for these csv files in the files from files directory
+  csvs: ["TS_PL_41_01.csv","TS_PL_41_02.csv","TS_PL_41_03.csv","TS_PL_41_04.csv","TS_PL_41_05.csv","TS_PL_41_06.csv",
+          "TS_PL_41_07.csv","TS_PL_41_08.csv","TS_PL_41_09.csv","TS_PL_41_10.csv","TS_PL_41_11.csv","TS_PL_41_12.csv","TS_PL_41_13.csv",
+          "TS_PL_41_14.csv","TS_PL_41_15.csv","TS_PL_41_16.csv","TS_PL_41_17.csv","TS_PL_41_18.csv","TS_PL_41_19.csv","TS_PL_41_20.csv",
+          "TS_PL_41_21.csv","TS_PL_41_22.csv","TS_PL_41_23.csv","TS_PL_41_24.csv","TS_PL_41_25.csv","TS_PL_41_26.csv","TS_PL_41_28.csv",
+          "TS_PL_41_29.csv","TS_PL_41_30.csv","TS_PL_41_31.csv","TS_PL_41_32.csv"
+        ]
+   
+   #look for the csv files in these files
+  files: ['TS_PL_41']
+   #if the mode is seeddata, one can set dummy data here
+  dummy: [[1, 1, 1, 1, ], [2, 2, 2, 2,],[3, 3, 3, 3], [5, 5, 5, 5,], [8, 8, 8, 8,],[9, 9,9, 9,], [10, 10, 10, 10,], [12, 12, 12, 12,], [11, 11, 11, 11,],[8, 8, 8, 8,],[7, 7, 7, 7,], [6, 6, 6, 6,] ,[5, 5, 5, 5,], [4, 4, 4, 4,],[1, 1, 1, 1, ], [2, 2, 2, 2,],[3, 3, 3, 3],[2, 2, 2, 2,],[3, 3, 3, 3]]
+extend: 
+  path_output: "data"
+  series_list:
+    - series: 
+      name: serieTrainNegative3Anomalies
+      standardizing: #list with one scale for each column, 
+                    #normalizes and scales data between min and max val, shifts to desired mean, if provided one
+        - scale: #scale e.g. for columns that are wrongly calibrated
+          min_val: 0
+          max_val: 2   
+          desired_mean: 3 # default None
+          column : 3 #
+      baseediting:
+        stretching: #stretches or shortens the data by given factor, 
+        #if <1 it drops lines, else interpolates
+          factor: 0.01
+          method: linear #for stretching, linear or pad
+          limit_direction: False # for padding
+        noising: #Generate Gaussian noise with mean 0 and variance proportional to the column and that is scaled by 'factor'
+          factor: 
+        concatenating: # repeatedly concatenates the dataframes a given number of times, and smoothes the edges
+          times:  # dataframe times+1 
+          smooth_number: 1 # how many numbers left and right at the cut are being smoothed
+          smooth_factor: 3
+        smoothing: #reduces the noise by applying gaussian smoothing
+          factor: 1.2 #a smaller number leads to less smoothing
+      projections: # applies pattern and anomalies on the timeseries
+              #patterns:
+              # random walk: pattern, that randomly chooses steps from -1,0,1
+              # sine wave
+              #anomalies:
+              #square shaped anomaly 
+              #bell shaped
+        - projection: projection1
+          column: 3
+          type: sine #sine or random walk 
+          frequency: 0.0001 # only for sine
+          amplitude: 
+      anomalies:
+        - anomaly: noise_artifact
+          column: 2
+          type: bell
+          position: 600
+          half_width: 30
+          height_factor: 3.0
+        - anomaly: voltage_drop
+          column: 4
+          type: square
+          position: 12000
+          half_width: 20
+          height_factor: -1.5
+        - anomaly: wirefeed_jump
+          column: 3
+          type: square
+          position: 8000
+          half_width:  15
+          height_factor: 1.5
+        - anomaly: voltage_spike
+          column: 4
+          type: bell
+          position: 10000
+          half_width:  20
+          height_factor: 2
+      generate:
+        duration: 0 #len(Smat[1])
+        substance_vals : [0, 0.05, 0.01, .8,0.14] # factors with which the features will go into the output 
+        
+        distribution_vals: [0, 0.2, 0.05, 0.6,0.15] #distribution width chagnes through these factors
+        conesize: 202 #must be even
+        output_path: data
+        final_subsampling: 1
+        output_path_subsampled: data
