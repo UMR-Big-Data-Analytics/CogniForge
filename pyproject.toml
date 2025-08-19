@@ -18,6 +18,9 @@ plotly = "^5.24.1"
 tensorflow = "~2.16"
 tensorflow-io-gcs-filesystem = "0.31.0"
 autotsad = { git = "https://github.com/UMR-Big-Data-Analytics/AutoTSAD.git", branch = "autotsad-cogniforge" }
+torch = {version = "^2.8.0", source = "pypi"}
+torchvision = {version = "^0.23.0", source = "pypi"}
+torchaudio = {version = "^2.8.0", source = "pypi"}
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
