@@ -26,17 +26,27 @@ def calculate_Fs(timely):
     return Fs
 
 def fftit(df_array, Fs, lbFreq, ubFreq):
-    meanLess = df_array.ravel() - np.mean(df_array.ravel())
+    # Use nanmean to be robust against NaNs in input data
+    meanLess = df_array.ravel() - np.nanmean(df_array.ravel())
+    # Replace any remaining NaNs with 0 before FFT
+    meanLess = np.nan_to_num(meanLess)
     Y = np.fft.fft(meanLess)
-    L = len(df_array)
+    L = len(meanLess)
     P2 = np.abs(Y / L)
     P1 = P2[:L // 2 + 1]
     P1[1:-1] *= 2
-    f = Fs * np.arange((L / 2 + 1)) / L
-    P1 = P1[(f >= lbFreq) & (f < ubFreq)]
-    f = f[(f >= lbFreq) & (f < ubFreq)]
-    maxP1 = np.max(P1)
-    FundFreq = f[maxP1 == P1] if maxP1.size > 0 else None
+    f = Fs * np.arange(L // 2 + 1) / L
+    freq_mask = (f >= lbFreq) & (f < ubFreq)
+    P1 = P1[freq_mask]
+    f = f[freq_mask]
+    if P1.size > 0:
+        maxP1 = np.max(P1)
+        if np.isfinite(maxP1):
+            FundFreq = f[P1 == maxP1]
+        else:
+            FundFreq = None
+    else:
+        FundFreq = None
     return P1, f, FundFreq
 
 def gaussian(x, amp, mean, stddev):
@@ -86,6 +96,8 @@ if st.button("Perform Analysis"):
                     headers = [f"{item1}_{item2}" for item1, item2 in zip(headers_and_units[0], headers_and_units[1])]
 
                     csvdata = pd.read_csv(StringIO(csv_text), delimiter=';', decimal=',', header=2)
+                    if len(csvdata.columns) > len(headers):
+                        csvdata = csvdata.iloc[:, :len(headers)]
                     csvdata.columns = headers
 
                     voltage_col = csvdata.columns[csvdata.columns.str.contains('volt|spannung', case=False)]
@@ -133,10 +145,14 @@ if st.button("Perform Analysis"):
                             
                             plt.close()
                             progress_bar.progress((i + 1) / total_files)
+                        else:
+                            st.warning(f"Skipping file '{file.name}': No significant frequency peak found above the lower bound.")
 
 
                 except Exception as e:
-                    st.error(f"Error processing {file.name}: {e}")
+                    # Add extra debug info to the existing error message
+                    debug_info = f"Error processing {file.name}: {e}\n"
+                    st.error(debug_info)
 
             # Update session state after FFT analysis
             st.session_state["latest_fft"].update({
