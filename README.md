@@ -15,3 +15,7 @@ The AI powered platform for supporting precision LDS processes.
 2. Start **CogniForge** with `streamlit run cogniforge/Home.py`
 
 
+## References
+
+1. Data generator (creates elevation profile): DataGen – https://github.com/HelenBrgg/DataGen
+2. Neural models (FCNN/LSTM/Transformer): Neural_Network – https://github.com/HelenBrgg/Neural_Network
