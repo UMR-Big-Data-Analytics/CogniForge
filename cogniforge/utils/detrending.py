@@ -10,6 +10,16 @@ from statsmodels.tsa.stattools import adfuller
 from scipy.stats import linregress
 from utils.session_state_management import update_session_state
 
+# DETRENDING ANALYSIS FEATURES
+# ====================================
+# The code detects trends in time series data and offers methods to remove them using different techniques.
+# TREND DETECTION METHODS:
+# - Linear regression (R-squared, slope, p-value)
+# - Augmented Dickey-Fuller test for stationarity
+# - Autocorrelation
+# DETRENDING METHODS:
+# - Linear detrending: Removes first-order polynomial trend using division and normalization
+# - Moving average detrending: Removes local trends using centered rolling window
 def initialize_session_state():
     """Initialize required session state variables if they don't exist."""
     if 'detrend_steps' not in st.session_state:
@@ -38,7 +48,7 @@ def detect_trend(data: np.ndarray, timestamps: np.ndarray) -> dict:
     direction = "⬆ Increasing" if slope > 0 else "⬇ Decreasing"
     # Stationarity test
     adf_p_value = adfuller(data)[1]
-    r2_threshold = 0.2
+    r2_threshold = 0.2 # If R2 > 0.2, trend is considered significant. Change if needed 0.2 is pretty generous
     stats_dict = {
         'r_squared': r_squared,
         'slope': slope,
@@ -165,7 +175,6 @@ def detrend_linear(data, time):
 
 def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
     initialize_session_state()
-
     if df is None:
         df = st.session_state.current_df.copy() if 'current_df' in st.session_state and st.session_state.current_df is not None else None
         if df is None:
@@ -187,7 +196,7 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
     if not chosen_columns:
         st.info("Please choose at least one column to analyze.")
         return df
-
+    # Look for time column
     time_col = [col for col in df.columns if 'Zeit' in col][0]
     timestamps = df[time_col].values
     needs_detrending = {}
@@ -204,6 +213,15 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
                 needs_detrending[chosen_column] = True
                 # Recommendation
                 recommendation = recommend_detrend_method(data, timestamps)
+                if recommendation['method'] == "Linear":
+                    st.info(f""" Recommended Method: Linear Detrending""")
+                else:  # Moving Average
+                    default_window = recommend_moving_average_window(data)
+                    st.info(f"""
+                                -Recommended Method: Moving Average Detrending
+                                - Recommended Window Size: {default_window}
+                                    """)
+
                 detrend_method = st.selectbox(
                     "Choose detrending method",
                     options=["Linear", "Moving Average"],
@@ -221,17 +239,13 @@ def analyze_detrend(df: pd.DataFrame = None) -> pd.DataFrame:
             if needs_detrending.get(chosen_column, False):
                 if detrend_method == "Moving Average":
                     default_window = recommend_moving_average_window(data)
-                    st.info(f"""
-                    **Recommended: Moving Average Detrending**:
-                    - Cyclical patterns detected
-                    - Recommended Window Size: {default_window}
-                    """)
                     params['window'] = st.slider(
                         "Window size",
                         3, 101,
                         default_window,
                         key=f"moving_avg_window_{chosen_column}"
                     )
+
             with st.expander("🔍 Trend Statistics"):
                 # Compute trend statistics for original data
                 original_stats_df = pd.DataFrame({

@@ -7,12 +7,22 @@ from furthrmind.file_loader import FileLoader
 from utils.downsampling import downsampling_page
 from utils.session_state_management import update_session_state
 
-
-#test #test....
+# TIME SERIES ANALYSIS
+# =========================================
+# This code implements the main application structure for a time series analysis tool.
+# MAIN FEATURES:
+# - Data loading from the FURTHRmind database
+# - Interactive visualizations of time series data
+# - Trend detection and detrending
+# - Noise reduction through smoothing
+# - Data size reduction through downsampling
+# - Results uploading back to the FURTHRmind database
 if 'ts_subpage' not in st.session_state:
     st.session_state.ts_subpage = "Overview"
 if 'df' not in st.session_state:
     st.session_state.df = None
+if 'current_df' not in st.session_state:
+    st.session_state.current_df = None
 if 'analysis_history' not in st.session_state:
     st.session_state.analysis_history = []
 if 'current_analysis_type' not in st.session_state:
@@ -43,7 +53,6 @@ def handle_revert():
     # Update both df and current_df to ensure consistency
     st.session_state.df = st.session_state.original_df.copy()
     st.session_state.current_df = st.session_state.original_df.copy()
-
     # Reset analysis type and processed columns
     st.session_state.current_analysis_type = None
     st.session_state.processed_columns = {
@@ -69,7 +78,7 @@ def handle_revert():
         st.session_state.show_downsampling_plots = False
 
 
-
+# navigation sidebar
 with st.sidebar:
     st.subheader("Time Series Tools")
     if st.button("📋 Overview", use_container_width=True, key="ts_overview"):
@@ -103,8 +112,11 @@ if st.session_state.ts_subpage == "Overview":
            """)
 
 # Configure each subpage
+#LOAD DATA PAGE
+#Download and process data
 if st.session_state.ts_subpage == "Load Data":
     st.title("📥 Load Data")
+    # display current dataset info if exists
     if st.session_state.df is not None:
         info_message = ["📊 Current Dataset Information:"]
         if 'original_filename' in st.session_state:
@@ -114,7 +126,7 @@ if st.session_state.ts_subpage == "Load Data":
             info_message.append(f"• Using complete dataset ({len(latest_df):,} rows)")
         else:
             info_message.append(f"• Using selected range ({len(latest_df):,} rows)")
-
+        # display last analysis message
         last_analysis = None
         if st.session_state.detrending_active:
             last_analysis = "Detrending"
@@ -124,13 +136,14 @@ if st.session_state.ts_subpage == "Load Data":
             last_analysis = "Downsampling"
         if last_analysis:
             info_message.append(f"• Last analysis visited: {last_analysis}")
-
+        # display current data info and the OPTION to clear current data and load a new dataset
         col1, col2 = st.columns([3, 1])
         with col1:
             st.markdown(f'<div style="border: 2px solid #f1f1f1; padding: 10px; background-color: #f5f5f5;">'
                         f'{"<br>".join(info_message)}</div>', unsafe_allow_html=True)
         with col2:
             if st.button("Clear Current Data", type="primary"):
+                #reset evrything
                 keys_to_clear = [
                     'df', 'original_df', 'detrending_active', 'smoothing_active', 'downsampling_active',
                     'analysis_history', 'original_filename', 'current_dataset_name',
@@ -150,6 +163,7 @@ if st.session_state.ts_subpage == "Load Data":
             from utils.furthr import FURTHRmind
 
             data = None
+            # Download data
             with st.expander("Step 1: Download Data", expanded=True):
                 with st.spinner('Downloading data...'):
                     downloader = FURTHRmind()
@@ -162,7 +176,7 @@ if st.session_state.ts_subpage == "Load Data":
                         st.session_state.original_filename = filename
                         data.name = filename
                         st.success("Data downloaded!")
-
+            # process data
             if data is not None:
                 with st.expander("Step 2: Process Data", expanded=False):
                     with st.spinner('Processing...'):
@@ -172,6 +186,7 @@ if st.session_state.ts_subpage == "Load Data":
                         if df is not None and not df.empty:
                             st.session_state.df = df
                             st.session_state.processing_complete = True
+                            # reset session states for a new dataset
                             if is_new_dataset:
                                 st.session_state.analysis_history = []
                                 st.session_state.detrending_active = False
@@ -185,7 +200,8 @@ if st.session_state.ts_subpage == "Load Data":
         except Exception as e:
             st.error(f"An error occurred: {e}")
 
-
+#DATA VISUALIZATION PAGE
+#Provides interactive visualization of time series data.
 elif st.session_state.ts_subpage == "Plot Data":
     from utils.plotting import plot_sampled
     st.title("📊 Plot Data")
@@ -202,15 +218,16 @@ elif st.session_state.ts_subpage == "Plot Data":
         - Optionally, choose to normalize the data to scale values between 0 and 1
         - Use the interactive chart to zoom in and explore the data more closely
         """)
+    # show plotting if a dataset has already been loaded
     if st.session_state.current_df is not None:
         plot_sampled(st.session_state.current_df)
     else:
         st.warning("Please load and process data first in the Load Data section.")
 
-
+# DETRENDING PAGE
 elif st.session_state.ts_subpage == "Detrend Data":
     from utils.detrending import analyze_detrend
-    from utils.session_state_management import update_session_state  # Add this import
+    from utils.session_state_management import update_session_state
 
     st.title("🧰 Detrend Data")
     with st.expander("**ℹ️How to Use**"):
@@ -226,7 +243,7 @@ elif st.session_state.ts_subpage == "Detrend Data":
         - Review trend statistics and visualization
         - Decide whether to apply detrending
         """)
-
+    # show detredning if a dataset has already been loaded
     if st.session_state.current_df is not None:
         st.session_state.data_info['total_rows'] = len(st.session_state.current_df)
         try:
@@ -237,6 +254,7 @@ elif st.session_state.ts_subpage == "Detrend Data":
                 if st.session_state.detrend_steps:
                     st.session_state.current_analysis_type = "detrend"
                     col1, col2 = st.columns([1, 4])
+                    # Show revert button if detrending has been applied
                     with col1:
                         if st.button("Revert to Original Data"):
                             st.session_state.show_plots = False
@@ -250,7 +268,7 @@ elif st.session_state.ts_subpage == "Detrend Data":
     else:
         st.warning("Please load and process data first in the Load Data section.")
 
-
+# SMOOTHING PAGE
 elif st.session_state.ts_subpage == "Smooth Data":
     from utils.smoothing import analyze_smooth
     st.title("🧰 Smooth Data")
@@ -268,7 +286,7 @@ elif st.session_state.ts_subpage == "Smooth Data":
             - Apply smoothing to the dataset
             - Optionally, revert back to the original data if needed by clicking "Revert to Original Data"
         """)
-
+    # show smoothing if a dataset has already been loaded
     if st.session_state.current_df is not None:
         st.session_state.data_info['total_rows'] = len(st.session_state.current_df)
         try:
@@ -288,6 +306,8 @@ elif st.session_state.ts_subpage == "Smooth Data":
     else:
         st.warning("Please load and process data first in the Load Data section.")
 
+
+# DOWNSAMPLING PAGE
 elif st.session_state.ts_subpage == "Downsample Data":
     st.title("🧰 Data Downsampling")
     with st.expander("ℹ️ **How to use**"):
