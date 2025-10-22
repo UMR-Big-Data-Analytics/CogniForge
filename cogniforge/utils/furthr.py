@@ -145,30 +145,6 @@ class FURTHRmind:
         """Setup the project for the API."""
         self.__id = id
         self.fm, _ = get_furthr_client()
-
-    def setup_project(self) -> API:
-        """Setup the project for the API."""
-        fm = API(
-            host="https://furthr.informatik.uni-marburg.de/",
-            api_key=os.getenv("FURTHRMIND_API_KEY"),
-        )
-
-        projects = Project.get_all()
-        project = selectbox(
-            projects, label="Choose a project", key=f"{self.__id}_project"
-        )
-
-        fm = API(
-            host="https://furthr.informatik.uni-marburg.de/",
-            api_key=os.getenv("FURTHRMIND_API_KEY"),
-            project_id=project.id,
-        )
-        return fm
-    
-    def get_group(self) -> Group | None:
-        groups = Group.get_all()
-        group = selectbox(groups, label="Choose a group", key=f"{self.__id}_group")
-        return group
     
     def select_group(self):
         """Select a group from the project."""
@@ -180,23 +156,6 @@ class FURTHRmind:
 
         if self.__selected is None:
             st.error("No group found")
-    
-    def select_experiment(
-        self, group: Group
-    ) -> Experiment | Sample | ResearchItem | None:
-        exp_sam = group.experiments + group.samples
-        for l in list(group.researchitems.values()):
-            exp_sam += l
-        chosen_data: Experiment | Sample | None = selectbox(
-            exp_sam,
-            format_name=lambda o: o.name,
-            label="Choose an experiment/sample",
-            key=f"{self.__id}_experiment",
-        )
-        if chosen_data is None:
-            return None
-        chosen_data = chosen_data.__class__.get(id=chosen_data.id)
-        return chosen_data
 
     def select_container(self):
         """Select a research item, experiment or sample from the group which has a specific attribute and field data"""
@@ -204,6 +163,8 @@ class FURTHRmind:
         group: Group | None = self.__selected
         if group is None:
             return
+        
+        group.get()
 
         if self.container_category == "experiment":
             label = "Choose an experiment"
@@ -252,30 +213,15 @@ class FURTHRmind:
         else:
             label = "Choose a file"
 
-        if not files:
-            st.error("No files found")
-            return
-
-        # Create a mapping from file id to File object.
-        files_by_id = {f.id: f for f in files}
-        file_ids = list(files_by_id.keys())
-
-        # Use a persistent key in session_state for the selected file's ID.
-        session_key = f"{self.__id}_selected_file_id"
-        if session_key not in st.session_state or st.session_state[session_key] not in file_ids:
-            st.session_state[session_key] = file_ids[0]
-
-        selected_file_id = st.selectbox(
-            label,
-            file_ids,
-            index=file_ids.index(st.session_state[session_key]),
-            key=f"{self.__id}_file",
-            format_func=lambda fid: files_by_id[fid].name
+        self.__selected = selectbox(
+            files, label=label, key=f"{self.__id}_file"
         )
-        st.session_state[session_key] = selected_file_id
-        self.__selected = files_by_id[selected_file_id]
 
-
+        if self.__selected is None:
+            if self.file_extension:
+                st.error(f"No {self.file_extension} file found")
+            else:
+                st.error("No file found")
 
     def download_bytes_button(self) -> tuple[BytesIO, str] | None:
         """Download the selected item as bytes from the FURTHRmind database."""
@@ -313,7 +259,7 @@ class FURTHRmind:
             file_loader.uploadFile(filePath=path_or_writer, parent=container_description)
         else:
             # useful to be able to only create a temp file when upload was pressed
-            with tempfile.NamedTemporaryFile(delete=False) as fh:
+            with tempfile.NamedTemporaryFile(delete_on_close=False) as fh:
                 _, file_name = path_or_writer(fh.name)
                 file_loader.uploadFile(
                     filePath=fh.name,
