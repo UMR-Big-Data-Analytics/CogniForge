@@ -3,7 +3,6 @@ import tempfile
 from collections.abc import Callable
 from io import BytesIO, StringIO
 from typing import Any
-from warnings import deprecated
 
 import config
 import pandas as pd
@@ -126,7 +125,7 @@ def is_fielddata_match(
     return True
 
 
-@deprecated("Use furthr_selectbox instead")
+# Use furthr_selectbox instead
 class FURTHRmind:
     """FURTHRmind API interface."""
 
