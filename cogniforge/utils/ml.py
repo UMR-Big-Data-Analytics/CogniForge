@@ -1,11 +1,17 @@
-import numpy as np
-from scipy.fftpack import fft2, fftshift
-import streamlit as st
-import tempfile
-import tensorflow as tf
 import os
+import tempfile
+
+import numpy as np
+import streamlit as st
+import tensorflow as tf
 from PIL import Image
+from scipy.fftpack import fft2, fftshift
 from utils.furthr import download_item_bytes, hash_furthr_item
+
+AVAILABLE_LOSSES = ['sparse_categorical_crossentropy']
+AVAILABLE_OPTIMIZERS = ['adam', 'sgd']
+AVAILABLE_ACTIVATIONS = ['softmax']
+AVAILABLE_ARCHITECTURES = ["EfficientNetV2B0","EfficientNetB0","ConvNeXtTiny","DenseNet201", "DenseNet169", "ResNet50", "ResNet50V2", "VGG16","VGG19"]
 
 
 @st.cache_resource(hash_funcs={"furthrmind.collection.file.File": hash_furthr_item})
