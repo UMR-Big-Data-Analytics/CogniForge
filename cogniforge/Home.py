@@ -11,7 +11,8 @@ pg = st.navigation({
         st.Page("Wire_Quality/Wire_Quality.py", title="Wire Quality", icon="🔌")
     ],
     "Steel Surface": [
-        st.Page("steel_quality/Rust.py", title="Rust Detection", icon="🧱"),
+        st.Page("steel_quality/RustInference.py", title="Rust Detection - Inference", icon="🧱"),
+        st.Page("steel_quality/RustTraining.py", title="Rust Detection - Training", icon="🧱"),
         st.Page("steel_quality/Roughness.py", title="Roughness Estimation", icon="🗻")
     ],
     "Layer Quality": [
