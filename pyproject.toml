@@ -27,3 +27,17 @@ priority = "supplemental"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 120
+include = ["pyproject.toml", "cogniforge/steel_quality/*.py"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # Pyflakes
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "I",   # isort
+]
