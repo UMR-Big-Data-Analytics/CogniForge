@@ -1,4 +1,5 @@
 import itertools
+from collections.abc import Iterable
 from typing import Generic, TypeVar
 
 import streamlit as st
@@ -109,3 +110,30 @@ def furthr_selectbox(
 def resolution(collection: FurthrCollectionWrapper) -> None:
     if collection:
         st.info(f"**Resolution:** {collection.image_width}x{collection.image_height} px")
+
+
+@st.fragment
+def form(
+        key: str,
+        inputs: dict[str, Iterable[str | bool]]
+) -> list[list[str | bool]]:
+    results = []
+    ready = True
+
+    for input_label, input_options in inputs.items():
+        input_type = type(input_options[0])
+
+        if input_type is bool:
+            input_value = st.pills(input_label, input_options, selection_mode="multi", key=f"{key}_{input_label}")
+        else:
+            input_value = st.multiselect(input_label, input_options, key=f"{key}_{input_label}")
+
+        ready = ready and len(input_value) > 0
+        results.append(input_value)
+
+    if ready:
+        st.success("All necessary information was entered")
+        return results
+    else:
+        st.error("At least one value of every input must be selected")
+        return None
