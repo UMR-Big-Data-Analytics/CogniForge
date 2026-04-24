@@ -44,9 +44,7 @@ with tab_data:
         },
         file_extension="tiff"
     )
-
-    if images:
-        st.markdown(f"Resolution: {images.image_width}x{images.image_height} px")
+    ui.resolution(images)
 
 
 with tab_model:

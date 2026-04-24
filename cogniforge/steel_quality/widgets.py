@@ -104,3 +104,8 @@ def furthr_selectbox(
         return FurthrCollectionWrapper(file)
     
     return None
+
+
+def resolution(collection: FurthrCollectionWrapper) -> None:
+    if collection:
+        st.info(f"**Resolution:** {collection.image_width}x{collection.image_height} px")
