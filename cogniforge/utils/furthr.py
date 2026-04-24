@@ -1,21 +1,22 @@
-import os
-import tempfile
-from io import BytesIO, StringIO
 import itertools
-from typing import Callable, Any
+import tempfile
+from collections.abc import Callable
+from io import BytesIO, StringIO
+from typing import Any
+from warnings import deprecated
 
+import config
 import pandas as pd
 import requests
 import streamlit as st
 from furthrmind import Furthrmind as API
-from furthrmind.collection import Experiment, File, Group, ResearchItem, Sample, FieldData, Project
+from furthrmind.collection import Experiment, FieldData, File, Group, ResearchItem, Sample
 from furthrmind.collection.baseclass import BaseClass
 from furthrmind.file_loader import FileLoader
-import config
 
+from . import http_cache
 from .object_select_box import selectbox
 from .state_button import button
-from . import http_cache
 
 
 @st.cache_resource
@@ -48,7 +49,7 @@ def __download_item(
     _, session = get_furthr_client()
     
     if isinstance(item, File):
-        b = download_fn(f"{config.furthr['host']}files/{item.id}", dict(session.headers))
+        b = download_fn(f"{config.furthr['host']}/files/{item.id}", dict(session.headers))
         if isinstance(b, (BytesIO, StringIO)):
             return (b, item.name)
         else:
@@ -114,7 +115,7 @@ def is_fielddata_match(
         if expected_value == "ANY":
             continue
         
-        if found_field.field_type == "ComboBox":
+        if found_field.field_type == "ComboBox":  # noqa: SIM108
             found_value = found_field.value['name']
         else:
             found_value = found_field.value
@@ -125,6 +126,7 @@ def is_fielddata_match(
     return True
 
 
+@deprecated("Use furthr_selectbox instead")
 class FURTHRmind:
     """FURTHRmind API interface."""
 
