@@ -8,10 +8,67 @@ from PIL import Image
 from scipy.fftpack import fft2, fftshift
 from utils.furthr import download_item_bytes, hash_furthr_item
 
-AVAILABLE_LOSSES = ['sparse_categorical_crossentropy']
-AVAILABLE_OPTIMIZERS = ['adam', 'sgd']
-AVAILABLE_ACTIVATIONS = ['softmax']
-AVAILABLE_ARCHITECTURES = ["EfficientNetV2B0","EfficientNetB0","ConvNeXtTiny","DenseNet201", "DenseNet169", "ResNet50", "ResNet50V2", "VGG16","VGG19"]
+AVAILABLE_LOSSES = [
+    "binary_crossentropy",
+    "binary_focal_crossentropy",
+    "categorical_crossentropy",
+    "categorical_focal_crossentropy",
+    "sparse_categorical_crossentropy",
+    "poisson",
+    "ctc",
+    "kl_divergence",
+    "mean_squared_error",
+    "mean_absolute_error",
+    "mean_absolute_percentage_error",
+    "mean_squared_logarithmic_error",
+    "cosine_similarity",
+    "huber_loss",
+    "log_cosh",
+    "tversky",
+    "dice",
+    "hinge",
+    "squared_hinge",
+    "categorical_hinge",
+    "categorical_generalized_cross_entropy",
+    "circle"
+]
+AVAILABLE_OPTIMIZERS = [
+    "SGD",
+    "rmsprop",
+    "adam",
+    "adamw",
+    "adadelta",
+    "adagrad",
+    "adamax",
+    "adafactor",
+    "nadam",
+    "ftrl",
+    "lion",
+    "lamb",
+    "muon"
+]
+AVAILABLE_ACTIVATIONS = [
+    "relu",
+    "sigmoid",
+    "softmax",
+    "softplus",
+    "softsign",
+    "tanh",
+    "selu",
+    "elu",
+    "exponential"
+]
+AVAILABLE_ARCHITECTURES = [
+    "EfficientNetV2B0",
+    "EfficientNetB0",
+    "ConvNeXtTiny",
+    "DenseNet201",
+    "DenseNet169",
+    "ResNet50",
+    "ResNet50V2",
+    "VGG16",
+    "VGG19"
+]
 
 
 @st.cache_resource(hash_funcs={"furthrmind.collection.file.File": hash_furthr_item})
