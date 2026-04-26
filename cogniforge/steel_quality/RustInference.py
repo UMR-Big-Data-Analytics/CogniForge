@@ -70,7 +70,7 @@ with tab_model:
                 'Loss Function': "ANY"
             },
             force_group_id=config.furthr['model_group_id'],
-            file_extension="tiff"
+            file_extension="keras"
         )
 
         if model:
