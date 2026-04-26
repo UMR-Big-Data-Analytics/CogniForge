@@ -1,4 +1,3 @@
-import itertools
 from collections.abc import Iterable
 from typing import Generic, TypeVar
 
@@ -7,31 +6,47 @@ from furthrmind import collection
 
 from cogniforge.utils.furthr import get_furthr_client, is_fielddata_match
 
-T = TypeVar('T', collection.Group, collection.Experiment, collection.Sample, collection.ResearchItem, collection.File)
+T = TypeVar('T', collection.Group, collection.Experiment, collection.Sample, collection.ResearchItem)
 Z = TypeVar('Z')
 
 
 class FurthrCollectionWrapper(Generic[T]):
-    def __init__(self, raw: T) -> None:
+    def __init__(self, raw: T, file_extension: str | None) -> None:
         self.raw = raw
+        self.file_extension = file_extension # maybe use for download?
 
         for field in raw.fielddata:
             # Python attribute names should be snake_case
             name = field.field_name.lower().replace(' ', '_')
-
-            if field.field_type == 'CheckBox':
-                # Otherwise would return None instead of False,
-                # which is bad for display purposes.
-                value = bool(field.value)
-            elif field.field_type == 'Numeric':
-                # Currently, decimal places are never used
-                # in metadata. Cast for shorter display.
-                value = int(field.value)
-            else:
-                value = field.value
-
+            value = FurthrCollectionWrapper.__clean_field_value(field)
             # Make metadata easily available
             setattr(self, name, value)
+
+    @staticmethod
+    def __clean_field_value(field: collection.FieldData):
+        if field.field_type == 'CheckBox':
+            # Otherwise would return None instead of False,
+            # which is bad for display purposes.
+            return bool(field.value)
+        if field.field_type == 'Numeric':
+            # Currently, decimal places are never used
+            # in metadata. Cast for shorter display.
+            return int(field.value)
+        return field.value
+
+
+def _test_container_match(
+        container_fielddata: dict[str, str | int | bool] | None,
+        file_extension: str | None
+):
+    def fn(candidate) -> bool:
+        candidate.get() # otherwise metadata empty
+        return (
+            (not container_fielddata or is_fielddata_match(candidate.fielddata, container_fielddata)) and
+            (not file_extension or any(f.name.endswith(file_extension) for f in candidate.files))
+        )
+
+    return fn
 
 
 def furthr_selectbox(
@@ -61,49 +76,26 @@ def furthr_selectbox(
         return None
     
     if collection_type is collection.Group:
-        return FurthrCollectionWrapper(group)
+        return FurthrCollectionWrapper(group, file_extension)
     
     if collection_type is collection.Experiment:
         label = "Choose an experiment"
-        items = group.experiments
+        containers = group.experiments
     elif collection_type is collection.Sample:
         label = "Choose a sample"
-        items = group.samples
+        containers = group.samples
     elif collection_type is collection.ResearchItem and collection_category:
         label = f"Choose a {collection_category} item"
-        items = group.researchitems.get(collection_category, [])
-    elif collection_type is collection.File:
-        label = "Choose an experiment/sample/research item"
-        items = group.experiments + group.samples
-        items.extend(itertools.chain.from_iterable(group.researchitems.values()))
+        containers = group.researchitems.get(collection_category, [])
 
-    if container_fielddata:
-        items = [
-            o for o in items
-            if is_fielddata_match(o.get().fielddata, container_fielddata)
-        ]
-    
-    container = select(label, items, "item")
+    if container_fielddata or file_extension:
+        containers = filter(_test_container_match(container_fielddata, file_extension), containers)    
 
-    if not container:
-        return None
-    
-    if collection_type is not collection.Field:
-        return FurthrCollectionWrapper(container)
-    
-    files: list[collection.File] = container.files
+    container = select(label, containers, "item")
 
-    if file_extension:
-        files = [f for f in files if f.name.endswith(file_extension)]
-        label = f"Choose a {file_extension} file"
-    else:
-        label = "Choose a file"
+    if container:
+        return FurthrCollectionWrapper(container, file_extension)
 
-    file = select(label, files, "file")
-
-    if file:
-        return FurthrCollectionWrapper(file)
-    
     return None
 
 
@@ -112,7 +104,7 @@ def resolution(collection: FurthrCollectionWrapper) -> None:
         st.info(f"**Resolution:** {collection.image_width}x{collection.image_height} px")
 
 
-@st.fragment
+@st.fragment # does this improve anything?
 def form(
         key: str,
         inputs: dict[str, Iterable[str | bool]]
