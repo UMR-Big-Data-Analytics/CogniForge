@@ -4,7 +4,7 @@ from typing import Generic, TypeVar
 import streamlit as st
 from furthrmind import collection
 
-from cogniforge.utils.furthr import get_furthr_client, is_fielddata_match
+from cogniforge.utils import furthr
 
 T = TypeVar('T', collection.Group, collection.Experiment, collection.Sample, collection.ResearchItem)
 Z = TypeVar('Z')
@@ -49,7 +49,7 @@ def _test_container_match(
     def fn(candidate) -> bool:
         candidate.get() # otherwise metadata empty
         return (
-            (not container_fielddata or is_fielddata_match(candidate.fielddata, container_fielddata)) and
+            (not container_fielddata or furthr.is_fielddata_match(candidate.fielddata, container_fielddata)) and
             (not file_extension or any(f.name.endswith(file_extension) for f in candidate.files))
         )
 
@@ -71,7 +71,7 @@ def furthr_selectbox(
         res = st.selectbox(label, options, None, get_option_name, f"{key}_{subkey}")
         return res.get() if res else None
 
-    fm, _ = get_furthr_client()
+    fm, _ = furthr.get_furthr_client()
 
     if force_group_id:
         group = fm.Group.get(force_group_id)
