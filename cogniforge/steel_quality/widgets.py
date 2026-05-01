@@ -14,6 +14,7 @@ class FurthrCollectionWrapper(Generic[T]):
     def __init__(self, raw: T, file_extension: str | None) -> None:
         self.raw = raw
         self.file_extension = file_extension # maybe use for download?
+        self.id = getattr(raw, 'id', raw._id)
 
         for field in raw.fielddata:
             # Python attribute names should be snake_case
@@ -21,6 +22,12 @@ class FurthrCollectionWrapper(Generic[T]):
             value = FurthrCollectionWrapper.__clean_field_value(field)
             # Make metadata easily available
             setattr(self, name, value)
+
+    # support for Streamlit cache_data
+    def __reduce__(self) -> tuple[str]:
+        # Without the comma, would return str instead of tuple[str]. See:
+        # https://docs.python.org/3/tutorial/datastructures.html#tuples-and-sequences
+        return (self.id, )
 
     @staticmethod
     def __clean_field_value(field: collection.FieldData):
