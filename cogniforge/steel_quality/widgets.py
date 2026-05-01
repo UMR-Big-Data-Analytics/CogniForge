@@ -103,3 +103,16 @@ def form(
     else:
         st.error("At least one value of every input must be selected")
         return None
+   
+
+def furthr_create_container(
+        key: str,
+        label: str = "results"
+)-> furthr.CollectionPlaceholder | None:
+    name = st.text_input("Type a name for the new " + label, placeholder="Container Name", key=f"{key}_name")
+    parent = furthr_selectbox(f"{key}_parent", collection.Group)
+
+    if name and parent:
+        return furthr.CollectionPlaceholder(name, parent)
+    
+    return None

@@ -87,18 +87,23 @@ with tab_model:
 
 
 with tab_prediction:
-    is_prediction_blocked = not (images and model)
+    st.markdown("## Choose where to store Results")
+    destination = ui.furthr_create_container(
+        key="dest"
+    )
+    st.markdown("## Run Prediction")
+    is_prediction_blocked = not (images and model and destination)
 
     if st.button("Predict", disabled=is_prediction_blocked):
-        model2 = load_model(model.raw.files[0])
+        model2 = load_model(model)
         images_result, preprocessed_images = load_images(
-            images.raw,
+            images,
             model.model_architecture,
             model.image_grayscaling,
             model.pretrained_weights,
             False
         )
-        custom_cache_key = (model.raw.id, images.raw.id)
+        custom_cache_key = (model.id, images.id)
         predictions = predict(model2, preprocessed_images, True, custom_cache_key)
         rust_percent, df = format_output(images.raw, images_result, predictions, custom_cache_key)
 
@@ -111,4 +116,4 @@ with tab_prediction:
         )
     
     if is_prediction_blocked:
-        st.markdown("Please select the data and a model first.")
+        st.markdown("Please select the data, a model and result destination first.")
