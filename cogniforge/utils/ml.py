@@ -6,7 +6,7 @@ import streamlit as st
 import tensorflow as tf
 from PIL import Image
 from scipy.fftpack import fft2, fftshift
-from utils.furthr import download_item_bytes, hash_furthr_item
+from steel_quality.widgets import FurthrCollectionWrapper
 
 AVAILABLE_LOSSES = [
     "binary_crossentropy",
@@ -71,9 +71,9 @@ AVAILABLE_ARCHITECTURES = [
 ]
 
 
-@st.cache_resource(hash_funcs={"furthrmind.collection.file.File": hash_furthr_item})
-def load_model(model_file):
-    model_bytes, _ = download_item_bytes(model_file)
+@st.cache_resource()
+def load_model(model_container: FurthrCollectionWrapper):
+    model_bytes, _ = model_container.download_items()[0]
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".keras") as fh:
         fh.write(model_bytes.getvalue())
@@ -84,10 +84,10 @@ def load_model(model_file):
 
 
 # need to do spinner ourself, else inner progress bar gets hidden
-@st.cache_data(show_spinner=False, hash_funcs={"furthrmind.collection.sample.Sample": hash_furthr_item})
-def load_images(images_container, architecture, grayscale, pretrain, fft):
+@st.cache_data(show_spinner=False)
+def load_images(images_container: FurthrCollectionWrapper, architecture, grayscale, pretrain, fft):
     with st.spinner("Running `load_images(...)`."):
-        images_result = download_item_bytes(images_container)
+        images_result = images_container.download_items()
         image_arrays = []
 
         for img_file, _ in images_result:
