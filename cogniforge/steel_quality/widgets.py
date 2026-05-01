@@ -1,51 +1,12 @@
 from collections.abc import Iterable
-from io import BytesIO
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 import streamlit as st
 from furthrmind import collection
 
 from cogniforge.utils import furthr
 
-T = TypeVar('T', collection.Group, collection.Experiment, collection.Sample, collection.ResearchItem)
 Z = TypeVar('Z')
-
-
-class FurthrCollectionWrapper(Generic[T]):
-    def __init__(self, raw: T, file_extension: str | None) -> None:
-        self.raw = raw
-        self.file_extension = file_extension
-        self.id = getattr(raw, 'id', raw._id)
-
-        for field in raw.fielddata:
-            # Python attribute names should be snake_case
-            name = field.field_name.lower().replace(' ', '_')
-            value = FurthrCollectionWrapper.__clean_field_value(field)
-            # Make metadata easily available
-            setattr(self, name, value)
-
-    # support for Streamlit cache_data
-    def __reduce__(self) -> tuple[str]:
-        # Without the comma, would return str instead of tuple[str]. See:
-        # https://docs.python.org/3/tutorial/datastructures.html#tuples-and-sequences
-        return (self.id, )
-
-    @staticmethod
-    def __clean_field_value(field: collection.FieldData):
-        if field.field_type == 'CheckBox':
-            # Otherwise would return None instead of False,
-            # which is bad for display purposes.
-            return bool(field.value)
-        if field.field_type == 'Numeric':
-            # Currently, decimal places are never used
-            # in metadata. Cast for shorter display.
-            return int(field.value)
-        return field.value
-    
-    def download_items(self) -> list[tuple[BytesIO, str]] | None:
-        return furthr.download_item_bytes(self.raw, self.file_extension)
-
-
 
 
 def _test_container_match(
@@ -64,12 +25,12 @@ def _test_container_match(
 
 def furthr_selectbox(
         key: str,
-        collection_type: type[T],
+        collection_type: type[furthr.C],
         collection_category: str | None = None,
         container_fielddata: dict[str, str | int | bool] | None = None,
         force_group_id: str | None = None,
         file_extension: str | None = None
-) -> FurthrCollectionWrapper[T] | None:
+) -> furthr.CollectionWrapper[furthr.C] | None:
     def get_option_name(option) -> str:
         return option.name
 
@@ -89,7 +50,7 @@ def furthr_selectbox(
         return None
     
     if collection_type is collection.Group:
-        return FurthrCollectionWrapper(group, file_extension)
+        return furthr.CollectionWrapper(group, file_extension)
     
     if collection_type is collection.Experiment:
         label = "Choose an experiment"
@@ -107,12 +68,12 @@ def furthr_selectbox(
     container = select(label, containers, "item")
 
     if container:
-        return FurthrCollectionWrapper(container, file_extension)
+        return furthr.CollectionWrapper(container, file_extension)
 
     return None
 
 
-def resolution(collection: FurthrCollectionWrapper) -> None:
+def resolution(collection: furthr.CollectionWrapper) -> None:
     if collection:
         st.info(f"**Resolution:** {collection.image_width}x{collection.image_height} px")
 

@@ -2,7 +2,7 @@ import itertools
 import tempfile
 from collections.abc import Callable
 from io import BytesIO, StringIO
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 import config
 import pandas as pd
@@ -16,6 +16,43 @@ from furthrmind.file_loader import FileLoader
 from . import http_cache
 from .object_select_box import selectbox
 from .state_button import button
+
+C = TypeVar('C', Group, Experiment, Sample, ResearchItem)
+
+
+class CollectionWrapper(Generic[C]):
+    def __init__(self, raw: C, file_extension: str | None) -> None:
+        self.raw = raw
+        self.file_extension = file_extension
+        self.id = getattr(raw, 'id', raw._id)
+
+        for field in raw.fielddata:
+            # Python attribute names should be snake_case
+            name = field.field_name.lower().replace(' ', '_')
+            value = CollectionWrapper.__clean_field_value(field)
+            # Make metadata easily available
+            setattr(self, name, value)
+
+    # support for Streamlit cache_data
+    def __reduce__(self) -> tuple[str]:
+        # Without the comma, would return str instead of tuple[str]. See:
+        # https://docs.python.org/3/tutorial/datastructures.html#tuples-and-sequences
+        return (self.id, )
+
+    @staticmethod
+    def __clean_field_value(field: FieldData):
+        if field.field_type == 'CheckBox':
+            # Otherwise would return None instead of False,
+            # which is bad for display purposes.
+            return bool(field.value)
+        if field.field_type == 'Numeric':
+            # Currently, decimal places are never used
+            # in metadata. Cast for shorter display.
+            return int(field.value)
+        return field.value
+
+    def download_items(self) -> list[tuple[BytesIO, str]] | None:
+        return download_item_bytes(self.raw, self.file_extension)
 
 
 @st.cache_resource
