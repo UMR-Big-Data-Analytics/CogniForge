@@ -55,6 +55,12 @@ class CollectionWrapper(Generic[C]):
         return download_item_bytes(self.raw, self.file_extension)
 
 
+class CollectionPlaceholder:
+    def __init__(self, new_name: str, parent_group: Group):
+        self.new_name = new_name
+        self.parent_group = parent_group
+
+
 @st.cache_resource
 def get_furthr_client():
     session = requests.Session()
