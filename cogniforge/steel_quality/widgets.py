@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from io import BytesIO
 from typing import Generic, TypeVar
 
 import streamlit as st
@@ -13,7 +14,7 @@ Z = TypeVar('Z')
 class FurthrCollectionWrapper(Generic[T]):
     def __init__(self, raw: T, file_extension: str | None) -> None:
         self.raw = raw
-        self.file_extension = file_extension # maybe use for download?
+        self.file_extension = file_extension
         self.id = getattr(raw, 'id', raw._id)
 
         for field in raw.fielddata:
@@ -40,6 +41,11 @@ class FurthrCollectionWrapper(Generic[T]):
             # in metadata. Cast for shorter display.
             return int(field.value)
         return field.value
+    
+    def download_items(self) -> list[tuple[BytesIO, str]] | None:
+        return furthr.download_item_bytes(self.raw, self.file_extension)
+
+
 
 
 def _test_container_match(
