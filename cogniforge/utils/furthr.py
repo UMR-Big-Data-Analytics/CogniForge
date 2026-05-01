@@ -71,6 +71,10 @@ def __download_item(
             st.error("No files found")
         return None
     
+    if len(files) == 1:
+        # shortcut progress bar
+        return [__download_item(files[0], file_extension, download_fn)]
+
     downloaded_files = []
     bar_title = "Download in progress. Please wait."
     my_bar = st.progress(0, text=bar_title)
