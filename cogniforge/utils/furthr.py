@@ -21,7 +21,11 @@ C = TypeVar('C', Group, Experiment, Sample, ResearchItem)
 
 
 class CollectionWrapper(Generic[C]):
-    def __init__(self, raw: C, file_extension: str | None) -> None:
+    def __init__(self, raw: C, file_extension: str | None = None) -> None:
+        # fetch fielddata if not already loaded
+        if not raw._fetched:
+            raw.get()
+
         self.raw = raw
         self.file_extension = file_extension
         self.id = getattr(raw, 'id', raw._id)
@@ -59,6 +63,19 @@ class CollectionPlaceholder:
     def __init__(self, new_name: str, parent_group: Group):
         self.new_name = new_name
         self.parent_group = parent_group
+
+    def __exists(self, collection_type: type[C]) -> bool:
+        plural = collection_type.__name__.lower() + "s"
+        children: list[C] = getattr(self.parent_group, plural)
+        return any(x.name == self.new_name for x in children)
+    
+    def create(self, collection_type: type[C]) -> CollectionWrapper[C]:
+        # without this a too generic error would be thrown
+        if self.__exists(collection_type):
+            raise ValueError(f"Cannot create {collection_type.__name__} '{self.new_name}' in group '{self.parent_group.name}' because it already exists")
+
+        instance = collection_type.create(name=self.new_name, group_id=self.parent_group.id)
+        return CollectionWrapper(instance)
 
 
 @st.cache_resource
