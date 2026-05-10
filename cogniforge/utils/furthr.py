@@ -69,12 +69,22 @@ class CollectionPlaceholder:
         children: list[C] = getattr(self.parent_group, plural)
         return any(x.name == self.new_name for x in children)
     
-    def create(self, collection_type: type[C]) -> CollectionWrapper[C]:
+    def create(
+            self,
+            collection_type: type[C],
+            collection_category: str | None = None
+    ) -> CollectionWrapper[C]:
         # without this a too generic error would be thrown
         if self.__exists(collection_type):
             raise ValueError(f"Cannot create {collection_type.__name__} '{self.new_name}' in group '{self.parent_group.name}' because it already exists")
+        
+        if collection_type is not ResearchItem:
+            instance = collection_type.create(name=self.new_name, group_id=self.parent_group.id)
+        elif not collection_category:
+            raise ValueError("A collection_category must be specified in case of ResearchItem")
+        else:
+            instance = collection_type.create(name=self.new_name, group_id=self.parent_group.id, category_name=collection_category)
 
-        instance = collection_type.create(name=self.new_name, group_id=self.parent_group.id)
         return CollectionWrapper(instance)
 
 
