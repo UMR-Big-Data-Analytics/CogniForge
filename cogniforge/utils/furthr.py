@@ -55,7 +55,7 @@ class CollectionWrapper(Generic[C]):
             return int(field.value)
         return field.value
 
-    def download_items(self) -> list[tuple[BytesIO, str]] | None:
+    def download_files(self) -> list[tuple[BytesIO, str]] | None:
         return download_item_bytes(self.raw, self.file_extension)
 
 
