@@ -38,6 +38,9 @@ def furthr_selectbox(
         res = st.selectbox(label, options, None, get_option_name, f"{key}_{subkey}")
         return res.get() if res else None
 
+    if collection_type is collection.ResearchItem and not collection_category:
+        raise ValueError("A collection_category must be specified in case of ResearchItem")
+
     fm, _ = furthr.get_furthr_client()
 
     if force_group_id:
@@ -58,7 +61,7 @@ def furthr_selectbox(
     elif collection_type is collection.Sample:
         label = "Choose a sample"
         containers = group.samples
-    elif collection_type is collection.ResearchItem and collection_category:
+    elif collection_type is collection.ResearchItem:
         label = f"Choose a {collection_category} item"
         containers = group.researchitems.get(collection_category, [])
 
