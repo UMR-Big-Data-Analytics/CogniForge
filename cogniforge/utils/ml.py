@@ -71,9 +71,9 @@ AVAILABLE_ARCHITECTURES = [
 ]
 
 
-@st.cache_resource()
+@st.cache_resource
 def load_model(model_container: furthr.CollectionWrapper):
-    model_bytes, _ = model_container.download_items()[0]
+    model_bytes, _ = model_container.download_files()[0]
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".keras") as fh:
         fh.write(model_bytes.getvalue())
@@ -87,7 +87,7 @@ def load_model(model_container: furthr.CollectionWrapper):
 @st.cache_data(show_spinner=False)
 def load_images(images_container: furthr.CollectionWrapper, architecture, grayscale, pretrain, fft):
     with st.spinner("Running `load_images(...)`."):
-        images_result = images_container.download_items()
+        images_result = images_container.download_files()
         image_arrays = []
 
         for img_file, _ in images_result:
@@ -115,12 +115,11 @@ def load_images(images_container: furthr.CollectionWrapper, architecture, graysc
     return images_result, X
 
 
-@st.cache_data
-def predict(_model, _X, _classification, custom_cache_key):
+def predict(model, X, classification):
     # Make predictions
-    predictions = _model.predict(_X)
+    predictions = model.predict(X)
 
-    if _classification:
+    if classification:
         # only for the Classification Task
         predictions = np.asarray(predictions).argmax(axis=1)
     elif predictions.ndim > 1:

@@ -11,20 +11,19 @@ st.markdown("""# Rust Detection - Inference
 
 This page is for the Rust tool developed by Valerie Durbach.
 
-You can evaluate an already trained model on a given image dataset
+You can *evaluate* an already trained model on a given image dataset
 and analyze the results here.""")
 
 
-@st.cache_data
-def format_output(_images_container, _images_result, _predictions, custom_cache_key):
-    rust_image_count = np.count_nonzero(_predictions)
-    total_image_count = _predictions.size
+def format_output(images_container, images_result, predictions):
+    rust_image_count = np.count_nonzero(predictions)
+    total_image_count = predictions.size
     rust_percent = rust_image_count * 100 / total_image_count
 
     df = pd.DataFrame({
-        "Filename": [o[1] for o in _images_result],
-        "Has rust": _predictions,
-        "Link": ["/Photo?file_id=" + file.id for file in _images_container.files]
+        "Filename": [o[1] for o in images_result],
+        "Has rust": predictions,
+        "Link": ["/Photo?file_id=" + file.id for file in images_container.files]
     })
     df = df.sort_values(by="Has rust", ascending=False)
     return rust_percent, df
@@ -35,7 +34,7 @@ tab_data, tab_model, tab_prediction = st.tabs(["Data", "Model Selection", "Predi
 
 with tab_data:
     st.markdown("## Choose Images")
-    images = ui.furthr_selectbox(
+    images = ui.furthr_open_collection(
         key="image",
         collection_type=ui.collection.Sample,
         container_fielddata={
@@ -54,7 +53,7 @@ with tab_model:
         st.markdown("Please select the data first. Then compatible models will be shown.")
     else:
         st.markdown("Only rust detection models compatible with the resolution of the selected data get shown below.")
-        model = ui.furthr_selectbox(
+        model = ui.furthr_open_collection(
             key="model",
             collection_type=ui.collection.ResearchItem,
             collection_category="Code",
@@ -88,11 +87,13 @@ with tab_model:
 
 with tab_prediction:
     st.markdown("## Choose where to store Results")
-    destination = ui.furthr_create_container(
-        key="dest"
+    placeholder = ui.furthr_save_collection(
+        "dest",
+        ui.collection.ResearchItem,
+        "Analysis"
     )
     st.markdown("## Run Prediction")
-    is_prediction_blocked = not (images and model and destination)
+    is_prediction_blocked = not (images and model and placeholder)
 
     if st.button("Predict", disabled=is_prediction_blocked):
         model2 = load_model(model)
@@ -103,10 +104,15 @@ with tab_prediction:
             model.pretrained_weights,
             False
         )
-        custom_cache_key = (model.id, images.id)
-        predictions = predict(model2, preprocessed_images, True, custom_cache_key)
-        rust_percent, df = format_output(images.raw, images_result, predictions, custom_cache_key)
+        with st.spinner("Running prediction ...", show_time=True):
+            predictions = predict(model2, preprocessed_images, True)
+            rust_percent, df = format_output(images.raw, images_result, predictions)
+            collection = placeholder.create()
+            collection.add_link_to(model)
+            collection.add_link_to(images)
+            collection.upload_dataframe(df, "Inference Results.csv")
 
+        st.info("The results have been stored in the database. You can also view them below.")
         st.metric(label="Rust Samples", value=f"{rust_percent:.1f} %")
         st.dataframe(
             df,

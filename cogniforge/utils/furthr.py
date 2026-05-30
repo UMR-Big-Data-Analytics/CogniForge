@@ -1,7 +1,9 @@
 import itertools
-import tempfile
+import os
 from collections.abc import Callable
+from contextlib import redirect_stdout
 from io import BytesIO, StringIO
+from tempfile import NamedTemporaryFile
 from typing import Any, Generic, TypeVar
 
 import config
@@ -57,33 +59,75 @@ class CollectionWrapper(Generic[C]):
 
     def download_files(self) -> list[tuple[BytesIO, str]] | None:
         return download_item_bytes(self.raw, self.file_extension)
-
-
-class CollectionPlaceholder:
-    def __init__(self, new_name: str, parent_group: Group):
-        self.new_name = new_name
-        self.parent_group = parent_group
-
-    def __exists(self, collection_type: type[C]) -> bool:
-        plural = collection_type.__name__.lower() + "s"
-        children: list[C] = getattr(self.parent_group, plural)
-        return any(x.name == self.new_name for x in children)
     
-    def create(
-            self,
-            collection_type: type[C],
-            collection_category: str | None = None
-    ) -> CollectionWrapper[C]:
-        # without this a too generic error would be thrown
-        if self.__exists(collection_type):
-            raise ValueError(f"Cannot create {collection_type.__name__} '{self.new_name}' in group '{self.parent_group.name}' because it already exists")
-        
-        if collection_type is not ResearchItem:
-            instance = collection_type.create(name=self.new_name, group_id=self.parent_group.id)
-        elif not collection_category:
-            raise ValueError("A collection_category must be specified in case of ResearchItem")
+    def upload_file(self, file_path: str, target_name: str | None = None) -> None:
+        self.raw.add_file(file_path, target_name)
+    
+    def upload_dataframe(self, df: pd.DataFrame, target_name: str) -> None:
+        # See https://stackoverflow.com/a/8577226
+        fh = NamedTemporaryFile(delete=False)  # noqa: SIM115
+
+        try:
+            df.to_csv(fh.name, index=False)
+            #fh.close()
+            self.upload_file(fh.name, target_name)
+        finally:
+            fh.close()
+            os.remove(fh.name)
+    
+    def add_link_to(self, target: 'CollectionWrapper'):
+        if isinstance(target.raw, Experiment):
+            self.raw.add_linked_experiment(target.id)
+        elif isinstance(target.raw, Sample):
+            self.raw.add_linked_sample(target.id)
+        elif isinstance(target.raw, ResearchItem):
+            self.raw.add_linked_researchitem(target.id)
         else:
-            instance = collection_type.create(name=self.new_name, group_id=self.parent_group.id, category_name=collection_category)
+            raise TypeError("Expected an Experiment/Sample/ResearchItem wrapped in CollectionWrapper")
+
+
+class CollectionPlaceholder(Generic[C]):
+    def __init__(
+            self,
+            name: str,
+            parent: Group,
+            type: type[C],
+            category: str | None
+    ):
+        if type is ResearchItem and not category:
+            raise ValueError("A category must be specified in case of ResearchItem")
+
+        self.name = name
+        self.parent = parent
+        self.type = type
+        self.category = category
+    
+    @property
+    def siblings(self) -> list[C]:
+        # fetch siblings if not already loaded
+        if not self.parent._fetched:
+            self.parent.get()
+
+        if self.type is Experiment:
+            return self.parent.experiments
+        elif self.type is Sample:
+            return self.parent.samples
+        else:
+            return self.parent.researchitems.get(self.category, [])
+
+    @property
+    def exists(self) -> bool:
+        return any(x.name == self.name for x in self.siblings)
+    
+    def create(self) -> CollectionWrapper[C]:
+        # without this a too generic error would be thrown
+        if self.exists:
+            raise ValueError(f"Cannot create {self.type.__name__} '{self.name}' in group '{self.parent.name}' because it already exists")
+        
+        if self.type is ResearchItem:
+            instance = self.type.create(self.name, group_id=self.parent.id, category_name=self.category)
+        else:
+            instance = self.type.create(self.name, group_id=self.parent.id)
 
         return CollectionWrapper(instance)
 

@@ -23,7 +23,7 @@ def _test_container_match(
     return fn
 
 
-def furthr_selectbox(
+def furthr_open_collection(
         key: str,
         collection_type: type[furthr.C],
         collection_category: str | None = None,
@@ -108,14 +108,30 @@ def form(
         return None
    
 
-def furthr_create_container(
+def furthr_save_collection(
         key: str,
-        label: str = "results"
+        collection_type: type[furthr.C],
+        collection_category: str | None = None,
+        overwrite_warning: bool = True
 )-> furthr.CollectionPlaceholder | None:
-    name = st.text_input("Type a name for the new " + label, placeholder="Container Name", key=f"{key}_name")
-    parent = furthr_selectbox(f"{key}_parent", collection.Group)
-
-    if name and parent:
-        return furthr.CollectionPlaceholder(name, parent.raw)
+    if collection_type is collection.Experiment:
+        type_str = "experiment"
+    elif collection_type is collection.Sample:
+        type_str = "sample"
+    elif collection_type is collection.ResearchItem:
+        type_str = f"{collection_category} item"
+    else:
+        raise TypeError("Expected a type of Experiment/Sample/ResearchItem")
     
-    return None
+    name = st.text_input("Type a name for the new " + type_str, placeholder="Container Name", key=f"{key}_name")
+    parent = furthr_open_collection(f"{key}_parent", collection.Group)
+
+    if not (name and parent):
+        return None
+    
+    placeholder = furthr.CollectionPlaceholder(name, parent.raw, collection_type, collection_category)
+
+    if overwrite_warning and placeholder.exists:
+        st.warning(f"The group '{parent.raw.name}' already contains {type_str} '{name}'")
+
+    return placeholder
