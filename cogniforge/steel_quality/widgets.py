@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from datetime import datetime
 from typing import TypeVar
 
 import streamlit as st
@@ -81,12 +82,11 @@ def resolution(collection: furthr.CollectionWrapper) -> None:
         st.info(f"**Resolution:** {collection.image_width}x{collection.image_height} px")
 
 
-@st.fragment # does this improve anything?
 def form(
         key: str,
         inputs: dict[str, Iterable[str | bool]]
-) -> list[list[str | bool]]:
-    results = []
+) -> dict[str, list[str | bool]]:
+    results = {}
     ready = True
 
     for input_label, input_options in inputs.items():
@@ -98,13 +98,13 @@ def form(
             input_value = st.multiselect(input_label, input_options, key=f"{key}_{input_label}")
 
         ready = ready and len(input_value) > 0
-        results.append(input_value)
+        results[input_label] = input_value
 
     if ready:
-        st.success("All necessary information was entered")
+        st.success("All necessary information was entered.")
         return results
     else:
-        st.error("At least one value of every input must be selected")
+        st.error("At least one value of every input must be selected.")
         return None
    
 
@@ -135,3 +135,7 @@ def furthr_save_collection(
         st.warning(f"The group '{parent.raw.name}' already contains {type_str} '{name}'")
 
     return placeholder
+
+
+def log(message: str):
+    st.markdown(f"`[{datetime.now().isoformat()}]` {message}")

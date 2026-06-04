@@ -1,3 +1,4 @@
+from math import ceil
 import os
 import tempfile
 
@@ -6,6 +7,8 @@ import streamlit as st
 import tensorflow as tf
 from PIL import Image
 from scipy.fftpack import fft2, fftshift
+from sklearn.utils import compute_class_weight
+from tensorflow.keras.callbacks import Callback, EarlyStopping, ReduceLROnPlateau
 from utils import furthr
 
 AVAILABLE_LOSSES = [
@@ -68,6 +71,11 @@ AVAILABLE_ARCHITECTURES = [
     "ResNet50V2",
     "VGG16",
     "VGG19"
+]
+AVAILABLE_POOLING = [
+    None,
+    "avg",
+    "max"
 ]
 
 
@@ -151,3 +159,92 @@ def apply_fft(image):
     magnitude_spectrum = magnitude_spectrum[:, :, np.newaxis]
 
     return magnitude_spectrum
+
+
+def build_model(architecture, input_size, activation, optimizer, loss, pretrain, pool):
+    # getting the model name and loss function dynamically
+    model_class = getattr(tf.keras.applications, architecture)
+    loss_function = getattr(tf.keras.losses, loss)
+
+    if pretrain:
+        weights = "imagenet"
+        top = False
+    else:
+        weights = None
+        top = True
+
+    # building model
+    model = model_class(
+        include_top=top,
+        weights=weights,
+        input_tensor=None,
+        input_shape=input_size,
+        pooling=pool,
+        classes=2,
+        classifier_activation=activation
+    )
+
+    # adding the appropiate layers for transfer learning
+    if pretrain:
+        x = tf.keras.layers.GlobalAveragePooling2D()(model.output)
+        output = tf.keras.layers.Dense(2, activation="softmax")(x)
+        model = tf.keras.models.Model(inputs=model.input, outputs=output)
+
+    # compiling model
+    model.compile(optimizer=optimizer, metrics=["acc"], loss=loss_function)
+    return model
+
+
+class TrainingProgressBar(Callback):
+    def __init__(self, x_train: np.ndarray, x_val: np.ndarray, epochs: int, batch_size: int):
+        train_batches = ceil(len(x_train) / batch_size)
+        val_batches = ceil(len(x_val) / batch_size)
+        self.max_steps = epochs * (train_batches + val_batches)
+        self.epochs = epochs
+        self.current_step = 0
+        self.bar = st.progress(0, f"Epoch 1 / {epochs}")
+
+    def __render(self):
+        percent_complete = self.current_step / self.max_steps
+        self.bar.progress(percent_complete, f"Epoch {self.current_epoch} / {self.epochs}")
+    
+    def __increment(self):
+        self.current_step += 1
+        self.__render()
+
+    def on_epoch_begin(self, epoch, logs):
+        # count from 1 to be more user friendly
+        self.current_epoch = epoch + 1
+        self.__render()
+
+    def on_train_batch_end(self, batch, logs):
+        self.__increment()
+
+    def on_test_batch_end(self, batch, logs):
+        self.__increment()
+
+    def on_train_end(self, logs):
+        self.bar.empty()
+
+
+def train_model(x_train, y_train, x_val, y_val, model, epochs, batch_size):
+    # Calculate class weights usefull if the classes are not balanced
+    class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
+    class_weight_dict = dict(enumerate(class_weights))
+    
+    #Callbacks, early stopping so the model does not overfits and reduce_lr for better accuracy
+    early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, min_lr=0.00001)
+    progress = TrainingProgressBar(x_train, x_val, epochs, batch_size)
+
+    #training the model
+    history = model.fit(
+        x_train,
+        y_train,
+        epochs=epochs,
+        batch_size=batch_size,
+        validation_data=(x_val, y_val),
+        callbacks=[early_stopping, reduce_lr, progress],
+        class_weight=class_weight_dict
+    )
+    return history
