@@ -108,6 +108,12 @@ class CollectionWrapper(Generic[C]):
             self.raw.add_linked_researchitem(target.id)
         else:
             raise TypeError("Expected an Experiment/Sample/ResearchItem wrapped in CollectionWrapper")
+    
+    def sub_collection(self, name: str, kind: type[C2], category: str | None = None) -> 'CollectionPlaceholder[C2]':
+        if not isinstance(self.raw, Group):
+            raise TypeError("Operation supported on Group, but self is " + type(self).__name__)
+        
+        return CollectionPlaceholder(name, self.raw, kind, category)
 
 
 class CollectionPlaceholder(Generic[C]):
