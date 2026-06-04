@@ -36,7 +36,7 @@ with tab_data:
     st.markdown("## Choose Images")
     images = ui.furthr_open_collection(
         key="image",
-        collection_type=ui.collection.Sample,
+        kind=ui.collection.Sample,
         container_fielddata={
             'Image Width': "ANY",
             'Image Height': "ANY"
@@ -55,8 +55,8 @@ with tab_model:
         st.markdown("Only rust detection models compatible with the resolution of the selected data get shown below.")
         model = ui.furthr_open_collection(
             key="model",
-            collection_type=ui.collection.ResearchItem,
-            collection_category="Code",
+            kind=ui.collection.ResearchItem,
+            category="Code",
             container_fielddata={
                 'Model Purpose': "Rust Detection",
                 'Image Width': images.image_width,

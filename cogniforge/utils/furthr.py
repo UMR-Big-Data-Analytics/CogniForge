@@ -20,6 +20,7 @@ from .object_select_box import selectbox
 from .state_button import button
 
 C = TypeVar('C', Group, Experiment, Sample, ResearchItem)
+C2 = TypeVar('C2', Group, Experiment, Sample, ResearchItem)
 
 
 class CollectionWrapper(Generic[C]):
@@ -114,15 +115,15 @@ class CollectionPlaceholder(Generic[C]):
             self,
             name: str,
             parent: Group,
-            type: type[C],
+            kind: type[C],
             category: str | None
     ):
-        if type is ResearchItem and not category:
+        if kind is ResearchItem and not category:
             raise ValueError("A category must be specified in case of ResearchItem")
 
         self.name = name
         self.parent = parent
-        self.type = type
+        self.kind = kind
         self.category = category
     
     @property
@@ -131,11 +132,11 @@ class CollectionPlaceholder(Generic[C]):
         if not self.parent._fetched:
             self.parent.get()
 
-        if self.type is Experiment:
+        if self.kind is Experiment:
             return self.parent.experiments
-        elif self.type is Sample:
+        elif self.kind is Sample:
             return self.parent.samples
-        else:
+        elif self.kind is ResearchItem:
             return self.parent.researchitems.get(self.category, [])
 
     @property
@@ -145,12 +146,12 @@ class CollectionPlaceholder(Generic[C]):
     def create(self) -> CollectionWrapper[C]:
         # without this a too generic error would be thrown
         if self.exists:
-            raise ValueError(f"Cannot create {self.type.__name__} '{self.name}' in group '{self.parent.name}' because it already exists")  # noqa: E501
+            raise ValueError(f"Cannot create {self.kind.__name__} '{self.name}' in parent group '{self.parent.name}' because it already exists")  # noqa: E501
         
-        if self.type is ResearchItem:
-            instance = self.type.create(self.name, group_id=self.parent.id, category_name=self.category)
+        if self.kind is ResearchItem:
+            instance = self.kind.create(self.name, group_id=self.parent.id, category_name=self.category)
         else:
-            instance = self.type.create(self.name, group_id=self.parent.id)
+            instance = self.kind.create(self.name, group_id=self.parent.id)
 
         return CollectionWrapper(instance)
 

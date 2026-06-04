@@ -1,13 +1,10 @@
 from collections.abc import Iterable
 from datetime import datetime
-from typing import TypeVar
 
 import streamlit as st
 from furthrmind import collection
 
 from cogniforge.utils import furthr
-
-Z = TypeVar('Z')
 
 
 def _test_container_match(
@@ -26,8 +23,8 @@ def _test_container_match(
 
 def furthr_open_collection(
         key: str,
-        collection_type: type[furthr.C],
-        collection_category: str | None = None,
+        kind: type[furthr.C],
+        category: str | None = None,
         container_fielddata: dict[str, str | int | bool] | None = None,
         force_group_id: str | None = None,
         file_extension: str | None = None
@@ -35,11 +32,11 @@ def furthr_open_collection(
     def get_option_name(option) -> str:
         return option.name
 
-    def select(label: str, options: list[Z], subkey: str) -> Z | None:
+    def select(label: str, options: list[furthr.C2], subkey: str) -> furthr.C2 | None:
         res = st.selectbox(label, options, None, get_option_name, f"{key}_{subkey}")
         return res.get() if res else None
 
-    if collection_type is collection.ResearchItem and not collection_category:
+    if kind is collection.ResearchItem and not category:
         raise ValueError("A collection_category must be specified in case of ResearchItem")
 
     fm, _ = furthr.get_furthr_client()
@@ -53,18 +50,18 @@ def furthr_open_collection(
     if not group:
         return None
     
-    if collection_type is collection.Group:
+    if kind is collection.Group:
         return furthr.CollectionWrapper(group, file_extension)
     
-    if collection_type is collection.Experiment:
+    if kind is collection.Experiment:
         label = "Choose an experiment"
         containers = group.experiments
-    elif collection_type is collection.Sample:
+    elif kind is collection.Sample:
         label = "Choose a sample"
         containers = group.samples
-    elif collection_type is collection.ResearchItem:
-        label = f"Choose a {collection_category} item"
-        containers = group.researchitems.get(collection_category, [])
+    elif kind is collection.ResearchItem:
+        label = f"Choose a {category} item"
+        containers = group.researchitems.get(category, [])
 
     if container_fielddata or file_extension:
         containers = filter(_test_container_match(container_fielddata, file_extension), containers)    
@@ -110,29 +107,29 @@ def form(
 
 def furthr_save_collection(
         key: str,
-        collection_type: type[furthr.C],
-        collection_category: str | None = None,
+        kind: type[furthr.C],
+        category: str | None = None,
         overwrite_warning: bool = True
-)-> furthr.CollectionPlaceholder | None:
-    if collection_type is collection.Experiment:
-        type_str = "experiment"
-    elif collection_type is collection.Sample:
-        type_str = "sample"
-    elif collection_type is collection.ResearchItem:
-        type_str = f"{collection_category} item"
+)-> furthr.CollectionPlaceholder[furthr.C] | None:
+    if kind is collection.Experiment:
+        kind_str = "experiment"
+    elif kind is collection.Sample:
+        kind_str = "sample"
+    elif kind is collection.ResearchItem:
+        kind_str = f"{category} item"
     else:
         raise TypeError("Expected a type of Experiment/Sample/ResearchItem")
     
-    name = st.text_input("Type a name for the new " + type_str, placeholder="Container Name", key=f"{key}_name")
+    name = st.text_input("Type a name for the new " + kind_str, placeholder="Container Name", key=f"{key}_name")
     parent = furthr_open_collection(f"{key}_parent", collection.Group)
 
     if not (name and parent):
         return None
     
-    placeholder = furthr.CollectionPlaceholder(name, parent.raw, collection_type, collection_category)
+    placeholder = furthr.CollectionPlaceholder(name, parent.raw, kind, category)
 
     if overwrite_warning and placeholder.exists:
-        st.warning(f"The group '{parent.raw.name}' already contains {type_str} '{name}'")
+        st.warning(f"The group '{parent.raw.name}' already contains {kind_str} '{name}'")
 
     return placeholder
 

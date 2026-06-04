@@ -62,7 +62,7 @@ with tab_data:
 The datasets listed below are known to contain images of rusty steel.""")
     rusty = ui.furthr_open_collection(
         key="rust",
-        collection_type=ui.collection.Sample,
+        kind=ui.collection.Sample,
         container_fielddata={
             'Data Label': 'Rust',
             'Image Width': "ANY",
@@ -80,7 +80,7 @@ Only those image datasets can be selected below,
 which have the *same resolution* as the previous.""")
         stainless = ui.furthr_open_collection(
             key="stainless",
-            collection_type=ui.collection.Sample,
+            kind=ui.collection.Sample,
             container_fielddata={
                 'Data Label': 'NoRust',
                 'Image Width': rusty.image_width,
