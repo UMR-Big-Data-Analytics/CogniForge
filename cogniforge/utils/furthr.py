@@ -9,6 +9,7 @@ import config
 import pandas as pd
 import requests
 import streamlit as st
+import tensorflow as tf
 from furthrmind import Furthrmind as API
 from furthrmind.collection import Experiment, FieldData, File, Group, ResearchItem, Sample
 from furthrmind.collection.baseclass import BaseClass
@@ -55,26 +56,49 @@ class CollectionWrapper(Generic[C]):
             # in metadata. Cast for shorter display.
             return int(field.value)
         return field.value
+    
+    @staticmethod
+    def __make_serializer(content) -> Callable[[str], None]:
+        if isinstance(content, pd.DataFrame):
+            def serializer(file_path: str):
+                content.to_csv(file_path, index=False)
+        elif isinstance(content, tf.keras.Model):
+            def serializer(file_path: str):
+                content.save(file_path)
+        else:
+            raise TypeError("Expected a DataFrame/Model, got " + type(content).__name__)
+
+        return serializer
+    
+    def __throw_if_files_unsupported(self):
+        if not isinstance(self.raw, (Experiment, Sample, ResearchItem)):
+            raise TypeError("Operation supported on Experiment/Sample/ResearchItem, but self is " + type(self).__name__)
 
     def download_files(self) -> list[tuple[BytesIO, str]] | None:
+        self.__throw_if_files_unsupported()
         return download_item_bytes(self.raw, self.file_extension)
     
-    def upload_file(self, file_path: str, target_name: str | None = None) -> None:
+    def upload_file(self, file_path: str, target_name: str | None = None):
+        self.__throw_if_files_unsupported()
         self.raw.add_file(file_path, target_name)
     
-    def upload_dataframe(self, df: pd.DataFrame, target_name: str) -> None:
+    def upload_content(self, content: pd.DataFrame | tf.keras.Model, target_name: str):
+        self.__throw_if_files_unsupported()
+        # Throw early on unexpected content type
+        serializer = CollectionWrapper.__make_serializer(content)
         # See https://stackoverflow.com/a/8577226
         fh = NamedTemporaryFile(delete=False)  # noqa: SIM115
 
         try:
-            df.to_csv(fh.name, index=False)
-            #fh.close()
-            self.upload_file(fh.name, target_name)
+            serializer(fh.name)
+            self.raw.add_file(fh.name, target_name)
         finally:
             fh.close()
             os.remove(fh.name)
     
     def add_link_to(self, target: 'CollectionWrapper'):
+        self.__throw_if_files_unsupported()
+
         if isinstance(target.raw, Experiment):
             self.raw.add_linked_experiment(target.id)
         elif isinstance(target.raw, Sample):

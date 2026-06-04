@@ -109,7 +109,7 @@ with tab_prediction:
         collection = placeholder.create()
         collection.add_link_to(model)
         collection.add_link_to(images)
-        collection.upload_dataframe(df, "Inference Results.csv")
+        collection.upload_content(df, "Inference Results.csv")
 
         st.info("The results have been stored in the database. You can also view them below.")
         st.metric(label="Rust Samples", value=f"{rust_percent:.1f} %")
