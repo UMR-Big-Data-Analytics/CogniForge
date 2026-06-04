@@ -2,9 +2,9 @@ import itertools
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
 import steel_quality.widgets as ui
 import streamlit as st
+from sklearn.model_selection import train_test_split
 
 from cogniforge.utils.ml import (
     AVAILABLE_ACTIVATIONS,
@@ -112,6 +112,7 @@ with tab_training:
     if st.button("Train", disabled=is_training_blocked):
         # for each setting building the corresponding model and evaluate the model
         combinations = generate_setting_combinations(settings)
+        total = 0
 
         for architecture, loss, activation, optimizer, grayscale, pretrain, pool in combinations:
             ui.log(f"""Selecting the following training settings:
@@ -143,19 +144,21 @@ with tab_training:
             X = np.append(rusty_preprocessed, stainless_preprocessed, axis=0)
             del rusty_preprocessed
             del stainless_preprocessed
-            Y = np.empty(len(rusty_raw) + len (stainless_raw), np.uint8)
+            Y = np.empty(len(rusty_raw) + len(stainless_raw), np.uint8)
             Y[:len(rusty_raw)] = 1
             Y[len(rusty_raw):] = 0
-            # Splitting the data into train,test and validation data, with random_state= 42 to ensure that every model will be trained with the same data for better comparison
+            # Splitting the data into train,test and validation data, with random_state= 42 to ensure that every model
+            # will be trained with the same data for better comparison.
             X_train, X_test_val, Y_train, Y_test_val = train_test_split(X, Y, test_size=0.3, random_state=42)
             X_test, X_val, Y_test, Y_val = train_test_split(X_test_val, Y_test_val, test_size=0.5, random_state=42)
             # building the corresponding model
             model = build_model(architecture, input_size, activation, optimizer, loss, pretrain, pool)
             ui.log("Running training process. This can take a long time.")
-            history = train_model(X_train, Y_train, X_val, Y_val, model, 20, 32)
+            history = train_model(X_train, Y_train, X_val, Y_val, model)
             ui.log("Finished training using previously selected settings.")
+            total += 1
 
-        ui.log(f"Trained {len(combinations)} different models. Overall process complete.")
+        ui.log(f"Trained {total} different models. Overall process complete.")
     
     if is_training_blocked:
         st.markdown("Please select the data and configure model settings first.")

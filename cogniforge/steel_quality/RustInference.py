@@ -104,13 +104,12 @@ with tab_prediction:
             model.pretrained_weights,
             False
         )
-        with st.spinner("Running prediction ...", show_time=True):
-            predictions = predict(model2, preprocessed_images, True)
-            rust_percent, df = format_output(images.raw, images_result, predictions)
-            collection = placeholder.create()
-            collection.add_link_to(model)
-            collection.add_link_to(images)
-            collection.upload_dataframe(df, "Inference Results.csv")
+        predictions = predict(model2, preprocessed_images, True)
+        rust_percent, df = format_output(images.raw, images_result, predictions)
+        collection = placeholder.create()
+        collection.add_link_to(model)
+        collection.add_link_to(images)
+        collection.upload_dataframe(df, "Inference Results.csv")
 
         st.info("The results have been stored in the database. You can also view them below.")
         st.metric(label="Rust Samples", value=f"{rust_percent:.1f} %")

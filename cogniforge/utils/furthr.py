@@ -1,7 +1,6 @@
 import itertools
 import os
 from collections.abc import Callable
-from contextlib import redirect_stdout
 from io import BytesIO, StringIO
 from tempfile import NamedTemporaryFile
 from typing import Any, Generic, TypeVar
@@ -122,7 +121,7 @@ class CollectionPlaceholder(Generic[C]):
     def create(self) -> CollectionWrapper[C]:
         # without this a too generic error would be thrown
         if self.exists:
-            raise ValueError(f"Cannot create {self.type.__name__} '{self.name}' in group '{self.parent.name}' because it already exists")
+            raise ValueError(f"Cannot create {self.type.__name__} '{self.name}' in group '{self.parent.name}' because it already exists")  # noqa: E501
         
         if self.type is ResearchItem:
             instance = self.type.create(self.name, group_id=self.parent.id, category_name=self.category)
