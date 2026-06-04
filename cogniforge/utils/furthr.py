@@ -154,6 +154,14 @@ class CollectionPlaceholder(Generic[C]):
             instance = self.kind.create(self.name, group_id=self.parent.id)
 
         return CollectionWrapper(instance)
+    
+    def get(self) -> CollectionWrapper[C]:
+        instance = next((x.name == self.name for x in self.siblings), None)
+
+        if instance:
+            return CollectionWrapper(instance)
+        
+        raise ValueError(f"Did not find {self.kind.__name__} '{self.name}' in parent group '{self.parent.name}'")
 
 
 @st.cache_resource
