@@ -138,6 +138,8 @@ class CollectionPlaceholder(Generic[C]):
             return self.parent.samples
         elif self.kind is ResearchItem:
             return self.parent.researchitems.get(self.category, [])
+        elif self.kind is Group:
+            return self.parent.sub_groups
 
     @property
     def exists(self) -> bool:
@@ -150,6 +152,8 @@ class CollectionPlaceholder(Generic[C]):
         
         if self.kind is ResearchItem:
             instance = self.kind.create(self.name, group_id=self.parent.id, category_name=self.category)
+        elif self.kind is Group:
+            instance = self.kind.create(self.name, parent_group_id=self.parent.id)
         else:
             instance = self.kind.create(self.name, group_id=self.parent.id)
 

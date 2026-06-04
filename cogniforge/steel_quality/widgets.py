@@ -117,8 +117,10 @@ def furthr_save_collection(
         kind_str = "sample"
     elif kind is collection.ResearchItem:
         kind_str = f"{category} item"
+    elif kind is collection.Group:
+        kind_str = "group"
     else:
-        raise TypeError("Expected a type of Experiment/Sample/ResearchItem")
+        raise TypeError("Expected a type of Experiment/Sample/ResearchItem/Group")
     
     name = st.text_input("Type a name for the new " + kind_str, placeholder="Container Name", key=f"{key}_name")
     parent = furthr_open_collection(f"{key}_parent", collection.Group)
