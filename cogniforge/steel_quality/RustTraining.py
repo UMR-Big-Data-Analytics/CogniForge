@@ -13,7 +13,9 @@ from cogniforge.utils.ml import (
     AVAILABLE_OPTIMIZERS,
     AVAILABLE_POOLING,
     build_model,
+    evaluate_model,
     load_images,
+    save_model,
     train_model,
 )
 
@@ -107,6 +109,7 @@ with tab_model:
 
 
 with tab_training:
+    st.markdown("## Run Prediction")
     is_training_blocked = not (stainless and settings)
 
     if st.button("Train", disabled=is_training_blocked):
@@ -115,6 +118,7 @@ with tab_training:
         total = 0
 
         for architecture, loss, activation, optimizer, grayscale, pretrain, pool in combinations:
+            total += 1
             ui.log(f"""Selecting the following training settings:
 
 **Model Architecture:** {architecture}  
@@ -151,12 +155,36 @@ with tab_training:
             # will be trained with the same data for better comparison.
             X_train, X_test_val, Y_train, Y_test_val = train_test_split(X, Y, test_size=0.3, random_state=42)
             X_test, X_val, Y_test, Y_val = train_test_split(X_test_val, Y_test_val, test_size=0.5, random_state=42)
-            # building the corresponding model
             model = build_model(architecture, input_size, activation, optimizer, loss, pretrain, pool)
             ui.log("Running training process. This can take a long time.")
-            history = train_model(X_train, Y_train, X_val, Y_val, model)
+
+            try:
+                history = train_model(X_train, Y_train, X_val, Y_val, model)
+            except ValueError as ex:
+                message = repr(ex).replace("`", "'") # basic markdown escape
+                st.error(f"""Failed to train. Propably the model is not compatible with the selected data and settings.
+
+Original Message: `{message}`""")
+                continue
+
+            model_container = save_model(model, total)
+            model_container.model_architecture = architecture
+            model_container.image_width = rusty.image_width
+            model_container.image_height = rusty.image_height
+            model_container.image_grayscaling = grayscale
+            model_container.pretrained_weights = pretrain
+            model_container.optimizer = optimizer
+            model_container.activation_function = activation
+            model_container.loss_function = loss
+            model_container.add_link_to(rusty)
+            model_container.add_link_to(stainless)
             ui.log("Finished training using previously selected settings.")
-            total += 1
+            ui.log("Saving model evaluation metrics ...")
+            eval_container = evaluate_model(model, True, total, X_test, Y_test, history)
+            eval_container.add_link_to(model_container)
+            eval_container.add_link_to(rusty)
+            eval_container.add_link_to(stainless)
+            ui.log("Stored the model and corresponding metrics in the database.")
 
         ui.log(f"Trained {total} different models. Overall process complete.")
     

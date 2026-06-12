@@ -14,6 +14,7 @@ from furthrmind import Furthrmind as API
 from furthrmind.collection import Experiment, FieldData, File, Group, ResearchItem, Sample
 from furthrmind.collection.baseclass import BaseClass
 from furthrmind.file_loader import FileLoader
+from matplotlib.figure import Figure
 
 from . import http_cache
 from .object_select_box import selectbox
@@ -32,48 +33,87 @@ class CollectionWrapper(Generic[C]):
         self.raw = raw
         self.file_extension = file_extension
         self.id = getattr(raw, 'id', raw._id)
+    
+    def __str__(self):
+        if isinstance(self.raw, ResearchItem):  # noqa: SIM108
+            kind = self.raw.category.name
+        else:
+            kind = type(self.raw).__name__
+            
+        return f"{kind} '{self.raw.name}' (ID: {self.id})"
+    
+    @staticmethod
+    def __to_furthr_field_name(python_attribute_name: str) -> str:
+        # Python attribute names are snake_case.
+        # The database uses "Title Case".
+        return ' '.join(o.capitalize() for o in python_attribute_name.split('_'))
+    
+    # Make metadata easily available
+    def __getattr__(self, name: str):
+        name = CollectionWrapper.__to_furthr_field_name(name)
 
-        for field in raw.fielddata:
-            # Python attribute names should be snake_case
-            name = field.field_name.lower().replace(' ', '_')
-            value = CollectionWrapper.__clean_field_value(field)
-            # Make metadata easily available
-            setattr(self, name, value)
+        try:
+            field = next(o for o in self.raw.fielddata if o.field_name == name)
+
+            if field.field_type == 'CheckBox':
+                # Otherwise would return None instead of False,
+                # which is bad for display purposes.
+                return bool(field.value)
+            
+            if field.field_type == 'Numeric':
+                # Currently, decimal places are never used
+                # in metadata. Cast for shorter display.
+                return int(field.value)
+            
+            return field.value
+        except StopIteration as ex:
+            raise AttributeError(f"The metadata does not contain a field called '{name}'") from ex    
+    
+    # Easily update metadata
+    def __setattr__(self, name: str, value):
+        if name in ['raw', 'file_extension', 'id']:
+            super().__setattr__(name, value)
+            return
+        
+        name = CollectionWrapper.__to_furthr_field_name(name)
+        
+        if any(o for o in self.raw.fielddata if o.field_name == name):
+            self.raw.update_field_value(value, field_name=name)
+            return
+        
+        if isinstance(value, bool):
+            field_type = 'CheckBox'
+        elif isinstance(value, (int, float)):
+            field_type = 'Numeric'
+        else:
+            field_type = 'SingleLine'
+
+        self.raw.add_field(field_name=name, field_type=field_type, value=value)
 
     # support for Streamlit cache_data
     def __reduce__(self) -> tuple[str]:
         # Without the comma, would return str instead of tuple[str]. See:
         # https://docs.python.org/3/tutorial/datastructures.html#tuples-and-sequences
         return (self.id, )
-
-    @staticmethod
-    def __clean_field_value(field: FieldData):
-        if field.field_type == 'CheckBox':
-            # Otherwise would return None instead of False,
-            # which is bad for display purposes.
-            return bool(field.value)
-        if field.field_type == 'Numeric':
-            # Currently, decimal places are never used
-            # in metadata. Cast for shorter display.
-            return int(field.value)
-        return field.value
     
     @staticmethod
     def __make_serializer(content) -> Callable[[str], None]:
         if isinstance(content, pd.DataFrame):
             def serializer(file_path: str):
                 content.to_csv(file_path, index=False)
-        elif isinstance(content, tf.keras.Model):
-            def serializer(file_path: str):
-                content.save(file_path)
-        else:
-            raise TypeError("Expected a DataFrame/Model, got " + type(content).__name__)
+            return serializer
+        
+        if isinstance(content, tf.keras.Model):
+            return content.save
+        
+        if isinstance(content, Figure):
+            return content.savefig
 
-        return serializer
+        raise TypeError("Expected a DataFrame/Model/Figure, got " + type(content).__name__)
     
     def __throw_if_files_unsupported(self):
         if not isinstance(self.raw, (Experiment, Sample, ResearchItem)):
-            raise TypeError("Operation supported on Experiment/Sample/ResearchItem, but self is " + type(self).__name__)
+            raise TypeError("Operation supported on Experiment/Sample/ResearchItem, but self is " + self)
 
     def download_files(self) -> list[tuple[BytesIO, str]] | None:
         self.__throw_if_files_unsupported()
@@ -83,12 +123,19 @@ class CollectionWrapper(Generic[C]):
         self.__throw_if_files_unsupported()
         self.raw.add_file(file_path, target_name)
     
-    def upload_content(self, content: pd.DataFrame | tf.keras.Model, target_name: str):
+    def upload_content(self, content: pd.DataFrame | tf.keras.Model | Figure, target_name: str):
         self.__throw_if_files_unsupported()
+
         # Throw early on unexpected content type
         serializer = CollectionWrapper.__make_serializer(content)
+
+        target_extension = os.path.splitext(target_name)[1]
+
+        if not target_extension:
+            raise ValueError("target_name must contain the desired file extension")
+        
         # See https://stackoverflow.com/a/8577226
-        fh = NamedTemporaryFile(delete=False)  # noqa: SIM115
+        fh = NamedTemporaryFile(delete=False, suffix=target_extension)  # noqa: SIM115
 
         try:
             serializer(fh.name)
@@ -111,7 +158,7 @@ class CollectionWrapper(Generic[C]):
     
     def sub_collection(self, name: str, kind: type[C2], category: str | None = None) -> 'CollectionPlaceholder[C2]':
         if not isinstance(self.raw, Group):
-            raise TypeError("Operation supported on Group, but self is " + type(self).__name__)
+            raise TypeError("Operation supported on Group, but self is " + self)
         
         return CollectionPlaceholder(name, self.raw, kind, category)
 
@@ -126,11 +173,17 @@ class CollectionPlaceholder(Generic[C]):
     ):
         if kind is ResearchItem and not category:
             raise ValueError("A category must be specified in case of ResearchItem")
+        
+        if category and kind is not ResearchItem:
+            raise ValueError("A category can only be set for ResearchItems")
 
         self.name = name
         self.parent = parent
         self.kind = kind
         self.category = category
+    
+    def __str__(self):
+        return f"{self.category or self.kind.__name__} '{self.name}'"
     
     @property
     def siblings(self) -> list[C]:
@@ -154,24 +207,25 @@ class CollectionPlaceholder(Generic[C]):
     def create(self) -> CollectionWrapper[C]:
         # without this a too generic error would be thrown
         if self.exists:
-            raise ValueError(f"Cannot create {self.kind.__name__} '{self.name}' in parent group '{self.parent.name}' because it already exists")  # noqa: E501
+            raise ValueError(f"Cannot create {self} in parent group '{self.parent.name}' because it already exists")  # noqa: E501
         
         if self.kind is ResearchItem:
-            instance = self.kind.create(self.name, group_id=self.parent.id, category_name=self.category)
+            instance = ResearchItem.create(self.name, group_id=self.parent.id, category_name=self.category)
         elif self.kind is Group:
-            instance = self.kind.create(self.name, parent_group_id=self.parent.id)
+            raise NotImplementedError("BROKEN: Group creation not possible. FURTHRmind differs in parameter names and types regarding between Python-SDK, serverside input validation and parameter parsing.")
+            #instance = Group.create(self.name, parent_group_id=self.parent.id)
         else:
+            # Sample or Experiment
             instance = self.kind.create(self.name, group_id=self.parent.id)
 
         return CollectionWrapper(instance)
     
     def get(self) -> CollectionWrapper[C]:
-        instance = next((x.name == self.name for x in self.siblings), None)
-
-        if instance:
+        try:
+            instance = next(x.name == self.name for x in self.siblings)
             return CollectionWrapper(instance)
-        
-        raise ValueError(f"Did not find {self.kind.__name__} '{self.name}' in parent group '{self.parent.name}'")
+        except StopIteration as ex:
+            raise ValueError(f"Did not find {self} in parent group '{self.parent.name}'") from ex
 
 
 @st.cache_resource
@@ -266,9 +320,9 @@ def is_fielddata_match(
         expected_fielddata: dict[str, str],
 ) -> bool:
     for field_name, expected_value in expected_fielddata.items():
-        found_field = next((o for o in found_fielddata if o.field_name == field_name), None)
-
-        if found_field is None:
+        try:
+            found_field = next(o for o in found_fielddata if o.field_name == field_name)
+        except StopIteration:
             return False
         
         if expected_value == "ANY":

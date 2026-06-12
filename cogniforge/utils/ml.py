@@ -1,5 +1,7 @@
 import os
 import tempfile
+from collections.abc import Callable
+from datetime import date
 from io import BytesIO
 from math import ceil
 
@@ -7,8 +9,10 @@ import config
 import numpy as np
 import streamlit as st
 import tensorflow as tf
+from matplotlib import pyplot as plt
 from PIL import Image
 from scipy.fftpack import fft2, fftshift
+from sklearn.metrics import ConfusionMatrixDisplay
 from sklearn.utils import compute_class_weight
 from tensorflow.keras.callbacks import Callback, EarlyStopping, History, ReduceLROnPlateau
 from utils import furthr
@@ -79,6 +83,7 @@ AVAILABLE_POOLING = [
     "avg",
     "max"
 ]
+MODEL_GROUP = furthr.CollectionWrapper(furthr.Group.get(config.furthr['model_group_id']))
 
 
 @st.cache_resource
@@ -199,7 +204,7 @@ def build_model(
     pool: str | None
 ) -> tf.keras.Model:
     # getting the model name and loss function dynamically
-    model_class = getattr(tf.keras.applications, architecture)
+    model_class: Callable[..., tf.keras.Model] = getattr(tf.keras.applications, architecture)
     loss_function = getattr(tf.keras.losses, loss)
 
     if pretrain:
@@ -224,7 +229,7 @@ def build_model(
     if pretrain:
         x = tf.keras.layers.GlobalAveragePooling2D()(model.output)
         output = tf.keras.layers.Dense(2, activation="softmax")(x)
-        model = tf.keras.Model(inputs=model.input, outputs=output)
+        model = tf.keras.Model(inputs=model.input, outputs=output, name=model.name)
 
     # compiling model
     model.compile(optimizer=optimizer, metrics=["acc"], loss=loss_function)
@@ -273,12 +278,12 @@ def train_model(
     class_weights = compute_class_weight('balanced', classes=np.unique(Y_train), y=Y_train)
     class_weight_dict = dict(enumerate(class_weights))
     
-    #Callbacks, early stopping so the model does not overfits and reduce_lr for better accuracy
+    # Callbacks, early stopping so the model does not overfits and reduce_lr for better accuracy
     early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
     reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, min_lr=0.00001)
     progress = TrainingProgressBar(X_train, X_val)
 
-    #training the model
+    # Training the model
     return model.fit(
         X_train,
         Y_train,
@@ -289,3 +294,50 @@ def train_model(
         class_weight=class_weight_dict,
         verbose=2
     )
+
+
+def save_model(model: tf.keras.Model, number: int) -> furthr.CollectionWrapper[furthr.ResearchItem]:
+    date_str = date.today().strftime('%Y-%m-%d')
+    long_name = f"Model {number}_{model.name}_{date_str}"
+    model_container = MODEL_GROUP.sub_collection(long_name, furthr.ResearchItem, "Code").create()
+    model_container.upload_content(model, f"{model.name}.keras")
+    return model_container
+
+
+def evaluate_model(
+        model: tf.keras.Model,
+        classification: bool,
+        number: int,
+        X_test: np.ndarray,
+        Y_test: np.ndarray,
+        history: History
+) -> furthr.CollectionWrapper[furthr.ResearchItem]:
+    predictions = predict(model, X_test, classification)
+    # creating folder for the model
+    date_str = date.today().strftime('%Y-%m-%d')
+    long_name = f"Evaluation {number}_{model.name}_{date_str}"
+    eval_container = MODEL_GROUP.sub_collection(long_name, furthr.ResearchItem, "Analysis").create()
+    # plot confusion matrix and saving .png
+    disp = ConfusionMatrixDisplay.from_predictions(Y_test, predictions)
+    eval_container.upload_content(disp.figure_, "cm_plot.png")
+    # plot model accuracy and saving .png
+    plt.figure()
+    plt.plot(history.history['acc'], marker='o')
+    plt.plot(history.history['val_acc'], marker='o')
+    plt.title('model accuracy')
+    plt.ylabel('accuracy')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'val'], loc='lower right')
+    eval_container.upload_content(plt.gcf(), "accuracy_plot.png")
+    plt.close()
+    # plot model loss and saving .png
+    plt.figure()
+    plt.plot(history.history['loss'], marker='o')
+    plt.plot(history.history['val_loss'], marker='o')
+    plt.title('model loss')
+    plt.ylabel('loss')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'val'], loc='upper right')
+    eval_container.upload_content(plt.gcf(), "loss_plot.png")
+    plt.close()
+    return eval_container
