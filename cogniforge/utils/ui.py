@@ -82,7 +82,7 @@ def resolution(collection: furthr.CollectionWrapper) -> None:
 def form(
         key: str,
         inputs: dict[str, Iterable[str | bool]]
-) -> dict[str, list[str | bool]]:
+) -> dict[str, list[str | bool]] | None:
     results = {}
     ready = True
 

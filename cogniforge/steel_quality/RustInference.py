@@ -1,9 +1,8 @@
-import config
 import numpy as np
 import pandas as pd
-import steel_quality.widgets as ui
 import streamlit as st
-from utils.ml import load_images, load_model, predict
+from utils import furthr, ui
+from utils.ml import CogniForgeModel, load_images
 
 st.set_page_config(page_title="CogniForge | Rust Inference", page_icon="🧱")
 
@@ -36,7 +35,7 @@ with tab_data:
     st.markdown("## Choose Images")
     images = ui.furthr_open_collection(
         key="image",
-        kind=ui.collection.Sample,
+        kind=furthr.Sample,
         container_fielddata={
             'Image Width': "ANY",
             'Image Height': "ANY"
@@ -53,61 +52,35 @@ with tab_model:
         st.markdown("Please select the data first. Then compatible models will be shown.")
     else:
         st.markdown("Only rust detection models compatible with the resolution of the selected data get shown below.")
-        model = ui.furthr_open_collection(
-            key="model",
-            kind=ui.collection.ResearchItem,
-            category="Code",
-            container_fielddata={
-                'Model Purpose': "Rust Detection",
-                'Image Width': images.image_width,
-                'Image Height': images.image_height,
-                'Model Architecture': "ANY",
-                'Image Grayscaling': "ANY",
-                'Pretrained Weights': "ANY",
-                'Optimizer': "ANY",
-                'Activation Function': "ANY",
-                'Loss Function': "ANY"
-            },
-            force_group_id=config.furthr['model_group_id'],
-            file_extension="keras"
-        )
+        model = CogniForgeModel.open_dropdown(True, images)
 
         if model:
-            st.markdown("### Model Properties")
-            st.table({
-                'Model Architecture': model.model_architecture,
-                'Expected Resolution': f"{model.image_width}x{model.image_height} px",
-                'Image Grayscaling': str(model.image_grayscaling),
-                'Pretrained Weights': str(model.pretrained_weights),
-                'Optimizer': model.optimizer,
-                'Activation Function': model.activation_function,
-                'Loss Function': model.loss_function
-            })
+            model.render_settings()
 
 
 with tab_prediction:
     st.markdown("## Choose where to store Results")
     placeholder = ui.furthr_save_collection(
         "dest",
-        ui.collection.ResearchItem,
+        furthr.ResearchItem,
         "Analysis"
     )
     st.markdown("## Run Prediction")
     is_prediction_blocked = not (images and model and placeholder)
 
     if st.button("Predict", disabled=is_prediction_blocked):
-        model2 = load_model(model)
+        model.download()
         images_result, preprocessed_images = load_images(
             images,
-            model.model_architecture,
-            model.image_grayscaling,
-            model.pretrained_weights,
-            False
+            model.architecture,
+            model.grayscale,
+            model.pretrain,
+            model.fft
         )
-        predictions = predict(model2, preprocessed_images, True)
+        predictions = model.predict(preprocessed_images)
         rust_percent, df = format_output(images.raw, images_result, predictions)
         collection = placeholder.create()
-        collection.add_link_to(model)
+        collection.add_link_to(model.container)
         collection.add_link_to(images)
         collection.upload_content(df, "Inference Results.csv")
 

@@ -1,6 +1,7 @@
+import itertools
 import os
 import tempfile
-from collections.abc import Callable
+from collections.abc import Generator
 from datetime import date
 from io import BytesIO
 from math import ceil
@@ -14,8 +15,8 @@ from PIL import Image
 from scipy.fftpack import fft2, fftshift
 from sklearn.metrics import ConfusionMatrixDisplay
 from sklearn.utils import compute_class_weight
-from tensorflow.keras.callbacks import Callback, EarlyStopping, History, ReduceLROnPlateau
-from utils import furthr
+from tensorflow.keras.callbacks import Callback, EarlyStopping, History, ReduceLROnPlateau  # type: ignore
+from utils import furthr, ui
 
 AVAILABLE_LOSSES = [
     "binary_crossentropy",
@@ -83,23 +84,11 @@ AVAILABLE_POOLING = [
     "avg",
     "max"
 ]
-MODEL_GROUP = furthr.CollectionWrapper(furthr.Group.get(config.furthr['model_group_id']))
-
-
-@st.cache_resource
-def load_model(model_container: furthr.CollectionWrapper) -> tf.keras.Model:
-    model_bytes, _ = model_container.download_files()[0]
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".keras") as fh:
-        fh.write(model_bytes.getvalue())
-        fh.close()
-        model = tf.keras.models.load_model(fh.name)
-        os.remove(fh.name)
-    return model
+MODEL_GROUP = furthr.CollectionWrapper(furthr.get_furthr_client()[0].Group.get(config.furthr['model_group_id']))
 
 
 # need to do spinner ourself, else inner progress bar gets hidden
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=2)
 def load_images(
     images_container: furthr.CollectionWrapper,
     architecture: str,
@@ -132,7 +121,7 @@ def load_images(
 
             if preprocess_function:
                 X = preprocess_function(X)
-            
+
     return images_result, X
 
 
@@ -147,27 +136,6 @@ class PredictionProgressBar(Callback):
 
     def on_predict_end(self, logs):
         self.bar.empty()
-
-
-def predict(model: tf.keras.Model, X: np.ndarray, classification: bool) -> np.ndarray:
-    # Make predictions
-    progress = PredictionProgressBar(X)
-    predictions = model.predict(
-        X,
-        batch_size=config.ml['batch_size'],
-        callbacks=[progress],
-        verbose=2
-    )
-
-    if classification:
-        # only for the Classification Task
-        return np.asarray(predictions).argmax(axis=1)
-    
-    if predictions.ndim > 1:
-        # needed for ResNet50 and maybe others
-        return predictions.ravel()
-
-    return predictions
 
 
 def apply_fft(image: np.ndarray) -> np.ndarray:
@@ -192,48 +160,6 @@ def apply_fft(image: np.ndarray) -> np.ndarray:
     magnitude_spectrum = magnitude_spectrum[:, :, np.newaxis]
 
     return magnitude_spectrum
-
-
-def build_model(
-    architecture: str,
-    input_size: tuple,
-    activation: str,
-    optimizer: str,
-    loss: str,
-    pretrain: bool,
-    pool: str | None
-) -> tf.keras.Model:
-    # getting the model name and loss function dynamically
-    model_class: Callable[..., tf.keras.Model] = getattr(tf.keras.applications, architecture)
-    loss_function = getattr(tf.keras.losses, loss)
-
-    if pretrain:
-        weights = "imagenet"
-        top = False
-    else:
-        weights = None
-        top = True
-
-    # building model
-    model = model_class(
-        include_top=top,
-        weights=weights,
-        input_tensor=None,
-        input_shape=input_size,
-        pooling=pool,
-        classes=2,
-        classifier_activation=activation
-    )
-
-    # adding the appropiate layers for transfer learning
-    if pretrain:
-        x = tf.keras.layers.GlobalAveragePooling2D()(model.output)
-        output = tf.keras.layers.Dense(2, activation="softmax")(x)
-        model = tf.keras.Model(inputs=model.input, outputs=output, name=model.name)
-
-    # compiling model
-    model.compile(optimizer=optimizer, metrics=["acc"], loss=loss_function)
-    return model
 
 
 class TrainingProgressBar(Callback):
@@ -267,77 +193,293 @@ class TrainingProgressBar(Callback):
         self.bar.empty()
 
 
-def train_model(
-    X_train: np.ndarray,
-    Y_train: np.ndarray,
-    X_val: np.ndarray,
-    Y_val: np.ndarray,
-    model: tf.keras.Model
-) -> History:
-    # Calculate class weights usefull if the classes are not balanced
-    class_weights = compute_class_weight('balanced', classes=np.unique(Y_train), y=Y_train)
-    class_weight_dict = dict(enumerate(class_weights))
-    
-    # Callbacks, early stopping so the model does not overfits and reduce_lr for better accuracy
-    early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
-    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, min_lr=0.00001)
-    progress = TrainingProgressBar(X_train, X_val)
+class CogniForgeModel:
+    classification: bool
+    architecture: str
+    width: int
+    height: int
+    grayscale: bool
+    pretrain: bool
+    fft: bool
+    optimizer: str
+    activation: str
+    loss: str
+    pool: str | None
+    container: furthr.CollectionWrapper[furthr.ResearchItem] | None
+    model: tf.keras.Model | None
 
-    # Training the model
-    return model.fit(
-        X_train,
-        Y_train,
-        epochs=config.ml['epochs'],
-        batch_size=config.ml['batch_size'],
-        validation_data=(X_val, Y_val),
-        callbacks=[early_stopping, reduce_lr, progress],
-        class_weight=class_weight_dict,
-        verbose=2
-    )
-
-
-def save_model(model: tf.keras.Model, number: int) -> furthr.CollectionWrapper[furthr.ResearchItem]:
-    date_str = date.today().strftime('%Y-%m-%d')
-    long_name = f"Model {number}_{model.name}_{date_str}"
-    model_container = MODEL_GROUP.sub_collection(long_name, furthr.ResearchItem, "Code").create()
-    model_container.upload_content(model, f"{model.name}.keras")
-    return model_container
-
-
-def evaluate_model(
-        model: tf.keras.Model,
+    def __init__(
+        self,
         classification: bool,
+        architecture: str,
+        width: int,
+        height: int,
+        grayscale: bool,
+        pretrain: bool,
+        fft: bool,
+        optimizer: str,
+        activation: str,
+        loss: str,
+        pool: str | None
+    ):
+        self.classification = classification
+        self.architecture = architecture
+        self.width = width
+        self.height = height
+        self.grayscale = grayscale
+        self.pretrain = pretrain
+        self.fft = fft
+        self.optimizer = optimizer
+        self.activation = activation
+        self.loss = loss
+        self.pool = pool
+    
+    @staticmethod
+    def from_container(container: furthr.CollectionWrapper[furthr.ResearchItem]) -> 'CogniForgeModel':
+        wrapper = CogniForgeModel(
+            container.model_purpose == "Rust Detection",
+            container.model_architecture,
+            container.image_width,
+            container.image_height,
+            container.image_grayscaling,
+            container.pretrained_weights,
+            getattr(container, 'fft_images', False),
+            container.optimizer,
+            container.activation_function,
+            container.loss_function,
+            None
+        )
+        wrapper.container = container
+        return wrapper
+    
+    @staticmethod
+    def open_dropdown(
+        classification: bool,
+        images: furthr.CollectionWrapper[furthr.Sample]
+    ) -> 'CogniForgeModel | None':
+        expected = {
+            'Image Width': images.image_width,
+            'Image Height': images.image_height,
+            'Model Architecture': "ANY",
+            'Image Grayscaling': "ANY",
+            'Pretrained Weights': "ANY",
+            'Optimizer': "ANY",
+            'Activation Function': "ANY",
+            'Loss Function': "ANY"
+        }
+
+        if classification:
+            expected['Model Purpose'] = "Rust Detection"
+        else:
+            expected['Model Purpose'] = "Roughness Estimation"
+            expected['FFT Images'] = "ANY"
+
+        container = ui.furthr_open_collection(
+            key="model",
+            kind=furthr.ResearchItem,
+            category="Code",
+            container_fielddata=expected,
+            force_group_id=config.furthr['model_group_id'],
+            file_extension="keras"
+        )
+        return CogniForgeModel.from_container(container) if container else None
+    
+    @staticmethod
+    def open_form(
+        classification: bool,
+        images: furthr.CollectionWrapper[furthr.Sample] | None
+    ) -> list['CogniForgeModel'] | None:
+        st.markdown("## Choose Model Settings")
+        inputs = {
+            'Model Architecture': AVAILABLE_ARCHITECTURES,
+            'Image Grayscaling': [True, False],
+            'Pretrained Weights': [True, False],
+            'Optimizer': AVAILABLE_OPTIMIZERS,
+            'Activation Function': AVAILABLE_ACTIVATIONS,
+            'Loss Function': AVAILABLE_LOSSES,
+            'Pooling Mode': AVAILABLE_POOLING
+        }
+
+        if not classification:
+            inputs['FFT Images'] = [True, False]
+
+        settings = ui.form("settings", inputs)
+
+        if not settings or not images:
+            return None
+        
+        return [
+            CogniForgeModel(
+                classification=classification,
+                architecture=o[0],
+                width=images.image_width,
+                height=images.image_height,
+                grayscale=o[1],
+                pretrain=o[2],
+                fft=False if classification else o[7],
+                optimizer=o[3],
+                activation=o[4],
+                loss=o[5],
+                pool=o[6]
+            )
+            for o in itertools.product(*settings.values())
+        ]
+
+    def render_settings(self):
+        st.markdown("### Model Properties")
+        st.table({
+            'Model Architecture': self.architecture,
+            'Expected Resolution': f"{self.width}x{self.height} px",
+            'Image Grayscaling': str(self.grayscale),
+            'Pretrained Weights': str(self.pretrain),
+            'Optimizer': self.optimizer,
+            'Activation Function': self.activation,
+            'Loss Function': self.loss
+        })
+
+    @st.cache_resource(ttl=config.furthr['file_ttl'], show_spinner="Running `CogniForgeModel.download(...)`.")
+    @staticmethod
+    def __cached_download(container: furthr.CollectionWrapper[furthr.ResearchItem]) -> tf.keras.Model:
+        data, _ = container.download_files()[0]
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".keras") as fh:
+            fh.write(data.getvalue())
+            fh.close()
+            model = tf.keras.models.load_model(fh.name)
+            os.remove(fh.name)
+        
+        return model
+    
+    def download(self):
+        self.model = CogniForgeModel.__cached_download(self.container)
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        progress = PredictionProgressBar(X)
+        predictions = self.model.predict(
+            X,
+            batch_size=config.ml['batch_size'],
+            callbacks=[progress],
+            verbose=2
+        )
+
+        if self.classification:
+            # only for the Classification Task
+            return np.asarray(predictions).argmax(axis=1)
+
+        if predictions.ndim > 1:
+            # needed for ResNet50 and maybe others
+            return predictions.ravel()
+
+        return predictions
+    
+    def build(self):
+        # getting the model name and loss function dynamically
+        model_class = getattr(tf.keras.applications, self.architecture)
+        loss_function = tf.keras.losses.get(self.loss)
+
+        if self.pretrain:
+            weights = "imagenet"
+            top = False
+        else:
+            weights = None
+            top = True
+
+        # building model
+        self.model = model_class(
+            include_top=top,
+            weights=weights,
+            input_tensor=None,
+            input_shape=(self.width, self.height) if self.grayscale else (self.width, self.height, 3),
+            pooling=self.pool,
+            classes=2,
+            classifier_activation=self.activation
+        )
+
+        # adding the appropiate layers for transfer learning
+        if self.pretrain:
+            x = tf.keras.layers.GlobalAveragePooling2D()(self.model.output)
+            output = tf.keras.layers.Dense(2, activation="softmax")(x)
+            self.model = tf.keras.Model(inputs=self.model.input, outputs=output)
+
+        # compiling model
+        self.model.compile(optimizer=self.optimizer, metrics=["acc"], loss=loss_function)
+    
+    def train(
+        self,
+        X_train: np.ndarray,
+        Y_train: np.ndarray,
+        X_val: np.ndarray,
+        Y_val: np.ndarray,
+    ) -> History:
+        # Calculate class weights usefull if the classes are not balanced
+        class_weights = compute_class_weight('balanced', classes=np.unique(Y_train), y=Y_train)
+        class_weight_dict = dict(enumerate(class_weights))
+        
+        # Callbacks, early stopping so the model does not overfits and reduce_lr for better accuracy
+        early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, min_lr=0.00001)
+        progress = TrainingProgressBar(X_train, X_val)
+
+        # Training the model
+        return self.model.fit(
+            X_train,
+            Y_train,
+            epochs=config.ml['epochs'],
+            batch_size=config.ml['batch_size'],
+            validation_data=(X_val, Y_val),
+            callbacks=[early_stopping, reduce_lr, progress],
+            class_weight=class_weight_dict,
+            verbose=2
+        )
+    
+    def upload(self, number: int) -> furthr.CollectionWrapper[furthr.ResearchItem]:
+        date_str = date.today().strftime('%Y-%m-%d')
+        long_name = f"Model {number}_{self.architecture}_{date_str}"
+        model_container = MODEL_GROUP.sub_collection(long_name, furthr.ResearchItem, "Code").create()
+        model_container.upload_content(self.model, f"{self.architecture}.keras")
+        model_container.model_architecture = self.architecture
+        model_container.image_width = self.width
+        model_container.image_height = self.height
+        model_container.image_grayscaling = self.grayscale
+        model_container.pretrained_weights = self.pretrain
+        model_container.optimizer = self.optimizer
+        model_container.activation_function = self.activation
+        model_container.loss_function = self.loss
+        return model_container
+    
+    def evaluate(
+        self,
         number: int,
         X_test: np.ndarray,
         Y_test: np.ndarray,
         history: History
-) -> furthr.CollectionWrapper[furthr.ResearchItem]:
-    predictions = predict(model, X_test, classification)
-    # creating folder for the model
-    date_str = date.today().strftime('%Y-%m-%d')
-    long_name = f"Evaluation {number}_{model.name}_{date_str}"
-    eval_container = MODEL_GROUP.sub_collection(long_name, furthr.ResearchItem, "Analysis").create()
-    # plot confusion matrix and saving .png
-    disp = ConfusionMatrixDisplay.from_predictions(Y_test, predictions)
-    eval_container.upload_content(disp.figure_, "cm_plot.png")
-    # plot model accuracy and saving .png
-    plt.figure()
-    plt.plot(history.history['acc'], marker='o')
-    plt.plot(history.history['val_acc'], marker='o')
-    plt.title('model accuracy')
-    plt.ylabel('accuracy')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'val'], loc='lower right')
-    eval_container.upload_content(plt.gcf(), "accuracy_plot.png")
-    plt.close()
-    # plot model loss and saving .png
-    plt.figure()
-    plt.plot(history.history['loss'], marker='o')
-    plt.plot(history.history['val_loss'], marker='o')
-    plt.title('model loss')
-    plt.ylabel('loss')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'val'], loc='upper right')
-    eval_container.upload_content(plt.gcf(), "loss_plot.png")
-    plt.close()
-    return eval_container
+    ) -> furthr.CollectionWrapper[furthr.ResearchItem]:
+        predictions = self.predict(X_test)
+        # creating folder for the model
+        date_str = date.today().strftime('%Y-%m-%d')
+        long_name = f"Evaluation {number}_{self.architecture}_{date_str}"
+        eval_container = MODEL_GROUP.sub_collection(long_name, furthr.ResearchItem, "Analysis").create()
+        # plot confusion matrix and saving .png
+        disp = ConfusionMatrixDisplay.from_predictions(Y_test, predictions)
+        eval_container.upload_content(disp.figure_, "cm_plot.png")
+        # plot model accuracy and saving .png
+        plt.figure()
+        plt.plot(history.history['acc'], marker='o')
+        plt.plot(history.history['val_acc'], marker='o')
+        plt.title('model accuracy')
+        plt.ylabel('accuracy')
+        plt.xlabel('epoch')
+        plt.legend(['train', 'val'], loc='lower right')
+        eval_container.upload_content(plt.gcf(), "accuracy_plot.png")
+        plt.close()
+        # plot model loss and saving .png
+        plt.figure()
+        plt.plot(history.history['loss'], marker='o')
+        plt.plot(history.history['val_loss'], marker='o')
+        plt.title('model loss')
+        plt.ylabel('loss')
+        plt.xlabel('epoch')
+        plt.legend(['train', 'val'], loc='upper right')
+        eval_container.upload_content(plt.gcf(), "loss_plot.png")
+        plt.close()
+        return eval_container

@@ -1,23 +1,9 @@
-import itertools
-
 import numpy as np
-import pandas as pd
-import steel_quality.widgets as ui
 import streamlit as st
 from sklearn.model_selection import train_test_split
-
-from cogniforge.utils.ml import (
-    AVAILABLE_ACTIVATIONS,
-    AVAILABLE_ARCHITECTURES,
-    AVAILABLE_LOSSES,
-    AVAILABLE_OPTIMIZERS,
-    AVAILABLE_POOLING,
-    build_model,
-    evaluate_model,
-    load_images,
-    save_model,
-    train_model,
-)
+from tensorflow.errors import InvalidArgumentError  # type: ignore
+from utils import furthr, ui
+from utils.ml import CogniForgeModel, load_images
 
 st.set_page_config(page_title="CogniForge | Rust Training", page_icon="🧱")
 
@@ -26,33 +12,6 @@ st.markdown("""# Rust Detection - Training
 This page is for the Rust tool developed by Valerie Durbach.
 
 You can *train* a new image classification model here.""")
-
-
-@st.cache_data
-def format_output(_images_container, _images_result, _predictions, custom_cache_key):
-    rust_image_count = np.count_nonzero(_predictions)
-    total_image_count = _predictions.size
-    rust_percent = rust_image_count * 100 / total_image_count
-
-    df = pd.DataFrame({
-        "Filename": [o[1] for o in _images_result],
-        "Has rust": _predictions,
-        "Link": ["/Photo?file_id=" + file.id for file in _images_container.files]
-    })
-    df = df.sort_values(by="Has rust", ascending=False)
-    return rust_percent, df
-
-
-def generate_setting_combinations(form: dict[str, list]):
-    return itertools.product(
-        form['Model Architecture'],
-        form['Loss Function'],
-        form['Activation Function'],
-        form['Optimizer'],
-        form['Image Grayscaling'],
-        form['Pretrained Weights'],
-        form['Pooling Mode']
-    )
 
 
 tab_data, tab_model, tab_training = st.tabs(["Data", "Model Config", "Training Process"])
@@ -64,7 +23,7 @@ with tab_data:
 The datasets listed below are known to contain images of rusty steel.""")
     rusty = ui.furthr_open_collection(
         key="rust",
-        kind=ui.collection.Sample,
+        kind=furthr.Sample,
         container_fielddata={
             'Data Label': 'Rust',
             'Image Width': "ANY",
@@ -82,7 +41,7 @@ Only those image datasets can be selected below,
 which have the *same resolution* as the previous.""")
         stainless = ui.furthr_open_collection(
             key="stainless",
-            kind=ui.collection.Sample,
+            kind=furthr.Sample,
             container_fielddata={
                 'Data Label': 'NoRust',
                 'Image Width': rusty.image_width,
@@ -96,55 +55,35 @@ which have the *same resolution* as the previous.""")
 
 
 with tab_model:
-    st.markdown("## Choose Model Settings")
-    settings = ui.form("settings", {
-        'Model Architecture': AVAILABLE_ARCHITECTURES,
-        'Image Grayscaling': [True, False],
-        'Pretrained Weights': [True, False],
-        'Optimizer': AVAILABLE_OPTIMIZERS,
-        'Activation Function': AVAILABLE_ACTIVATIONS,
-        'Loss Function': AVAILABLE_LOSSES,
-        'Pooling Mode': AVAILABLE_POOLING
-    })
+    models = CogniForgeModel.open_form(True, rusty)
 
 
 with tab_training:
-    st.markdown("## Run Prediction")
-    is_training_blocked = not (stainless and settings)
+    st.markdown("## Run Training")
+    is_training_blocked = not (stainless and models)
 
-    if st.button("Train", disabled=is_training_blocked):
+    if st.button(f"Train {len(models)} models" if models else "Train", disabled=is_training_blocked):
         # for each setting building the corresponding model and evaluate the model
-        combinations = generate_setting_combinations(settings)
-        total = 0
 
-        for architecture, loss, activation, optimizer, grayscale, pretrain, pool in combinations:
-            total += 1
-            ui.log(f"""Selecting the following training settings:
-
-**Model Architecture:** {architecture}  
-**Image Grayscaling:** {grayscale}  
-**Pretrained Weights:** {pretrain}  
-**Optimizer:** {optimizer}  
-**Activation Function:** {activation}  
-**Loss Function:** {loss}  
-**Pooling Mode:** {pool}""")
+        for index, model in enumerate(models):
+            ui.log("Selecting the following training settings:")
+            model.render_settings()
             ui.log("Preparing images and new model for training ...")
             # preprocess the data for training and testing
             rusty_raw, rusty_preprocessed = load_images(
                 rusty,
-                architecture,
-                grayscale,
-                pretrain,
-                False
+                model.architecture,
+                model.grayscale,
+                model.pretrain,
+                model.fft
             )
             stainless_raw, stainless_preprocessed = load_images(
                 stainless,
-                architecture,
-                grayscale,
-                pretrain,
-                False
+                model.architecture,
+                model.grayscale,
+                model.pretrain,
+                model.fft
             )
-            input_size = rusty_preprocessed[0].shape
             X = np.append(rusty_preprocessed, stainless_preprocessed, axis=0)
             del rusty_preprocessed
             del stainless_preprocessed
@@ -155,38 +94,31 @@ with tab_training:
             # will be trained with the same data for better comparison.
             X_train, X_test_val, Y_train, Y_test_val = train_test_split(X, Y, test_size=0.3, random_state=42)
             X_test, X_val, Y_test, Y_val = train_test_split(X_test_val, Y_test_val, test_size=0.5, random_state=42)
-            model = build_model(architecture, input_size, activation, optimizer, loss, pretrain, pool)
-            ui.log("Running training process. This can take a long time.")
 
             try:
-                history = train_model(X_train, Y_train, X_val, Y_val, model)
-            except ValueError as ex:
-                message = repr(ex).replace("`", "'") # basic markdown escape
+                model.build()
+                ui.log("Running training process. This can take a long time.")
+                history = model.train(X_train, Y_train, X_val, Y_val)
+            except (ValueError, InvalidArgumentError) as ex:
+                message = str(ex).replace("`", "'") # basic markdown escape
                 st.error(f"""Failed to train. Propably the model is not compatible with the selected data and settings.
 
 Original Message: `{message}`""")
                 continue
 
-            model_container = save_model(model, total)
-            model_container.model_architecture = architecture
-            model_container.image_width = rusty.image_width
-            model_container.image_height = rusty.image_height
-            model_container.image_grayscaling = grayscale
-            model_container.pretrained_weights = pretrain
-            model_container.optimizer = optimizer
-            model_container.activation_function = activation
-            model_container.loss_function = loss
+            model_container = model.upload(index)
             model_container.add_link_to(rusty)
             model_container.add_link_to(stainless)
             ui.log("Finished training using previously selected settings.")
             ui.log("Saving model evaluation metrics ...")
-            eval_container = evaluate_model(model, True, total, X_test, Y_test, history)
+            #eval_container = evaluate_model(model, True, total, X_test, Y_test, history)
+            eval_container = model.evaluate(index, X_test, Y_test, history)
             eval_container.add_link_to(model_container)
             eval_container.add_link_to(rusty)
             eval_container.add_link_to(stainless)
             ui.log("Stored the model and corresponding metrics in the database.")
 
-        ui.log(f"Trained {total} different models. Overall process complete.")
+        ui.log(f"Trained {len(models)} different models. Overall process complete.")
     
     if is_training_blocked:
         st.markdown("Please select the data and configure model settings first.")

@@ -46,6 +46,9 @@ class CollectionWrapper(Generic[C]):
     def __to_furthr_field_name(python_attribute_name: str) -> str:
         # Python attribute names are snake_case.
         # The database uses "Title Case".
+        if python_attribute_name == 'fft_images':
+            return 'FFT Images'
+        
         return ' '.join(o.capitalize() for o in python_attribute_name.split('_'))
     
     # Make metadata easily available

@@ -1,13 +1,15 @@
-import streamlit as st
 from io import BytesIO, StringIO
-import requests
 
+import requests
+import streamlit as st
+
+from cogniforge import config
 
 # reuse TCP connections
 session = requests.Session()
 
 
-@st.cache_data
+@st.cache_data(ttl=config.furthr['file_ttl'])
 def get_as_string(
     url: str, headers: dict
 ) -> StringIO | requests.Response:
@@ -19,7 +21,7 @@ def get_as_string(
         return response
 
 
-@st.cache_data
+@st.cache_data(ttl=config.furthr['file_ttl'])
 def get_as_bytes(
     url: str, headers: dict
 ) -> BytesIO | requests.Response:
