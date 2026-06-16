@@ -1,9 +1,8 @@
 import itertools
+import json
 import os
 import tempfile
-from collections.abc import Generator
-from datetime import date
-from io import BytesIO
+from datetime import datetime
 from math import ceil
 
 import config
@@ -146,30 +145,62 @@ MODEL_GROUP = furthr.CollectionWrapper(furthr.get_furthr_client()[0].Group.get(c
 # need to do spinner ourself, else inner progress bar gets hidden
 @st.cache_data(show_spinner=False, max_entries=2)
 def load_images(
+    classification: bool,
     images_container: furthr.CollectionWrapper,
     architecture: str,
     grayscale: bool,
     pretrain: bool,
     fft: bool
-) -> tuple[list[tuple[BytesIO, str]], np.ndarray]:
+) -> tuple[list[str], list[str], np.ndarray, np.ndarray]:
     with st.spinner("Running `load_images(...)`."):
-        images_result = images_container.download_files()
-        image_arrays = []
+        #if fft:
+         #   grayscale = True
 
-        for img_file, _ in images_result:
-            with Image.open(img_file) as im:
-                if grayscale or fft:
+        images_raw = images_container.download_files()
+        X_shape = (
+            len(images_raw),
+            images_container.image_width,
+            images_container.image_height,
+            1 if grayscale else 3
+        )
+        X = np.empty(X_shape, dtype=np.uint8)
+
+        if not classification:
+            range = config.ml['roughness_range']
+            Y = np.empty(len(images_raw), dtype=np.float32)
+        elif images_container.data_label == "Rust":
+            Y = np.ones(len(images_raw), dtype=np.uint8)
+        else:
+            Y = np.zeros(len(images_raw), dtype=np.uint8)
+
+        ids = []
+        names = []
+
+        for img_bytes, img_name, img_id in images_raw:
+            with Image.open(img_bytes) as im:
+                if not classification:
+                    # Tag number 270 is the ImageDescription tag
+                    tags = json.loads(im.tag_v2[270])
+                    Rz = tags['roughness']['Rz']
+
+                    if Rz < range.start or Rz > range.stop:
+                        continue
+                    
+                    Y[len(ids)] = Rz
+
+                if grayscale:
                     im = im.convert("L")
-
-                np_im = np.array(im)
+                    np_im = np.array(im)
+                    np_im = np.expand_dims(np_im, axis=-1)
+                else:
+                    np_im = np.array(im)
 
                 if fft:
                     np_im = apply_fft(np_im)
 
-                image_arrays.append(np_im)
-
-        X = image_arrays
-        X = np.array([np.array(val) for val in X])
+                X[len(ids)] = np_im
+                names.append(img_name)
+                ids.append(img_id)
 
         if pretrain:
             model_class = getattr(tf.keras.applications, architecture)
@@ -178,7 +209,7 @@ def load_images(
             if preprocess_function:
                 X = preprocess_function(X)
 
-    return images_result, X
+    return ids, names, X[:len(ids)], Y[:len(ids)]
 
 
 class PredictionProgressBar(Callback):
@@ -289,6 +320,8 @@ class CogniForgeModel:
         self.activation = activation
         self.loss = loss
         self.pool = pool
+        self.container = None
+        self.model = None
     
     @staticmethod
     def from_container(container: furthr.CollectionWrapper[furthr.ResearchItem]) -> 'CogniForgeModel':
@@ -382,8 +415,7 @@ class CogniForgeModel:
         ]
 
     def render_settings(self):
-        st.markdown("### Model Properties")
-        st.table({
+        settings = {
             'Model Architecture': self.architecture,
             'Expected Resolution': f"{self.width}x{self.height} px",
             'Image Grayscaling': str(self.grayscale),
@@ -391,12 +423,22 @@ class CogniForgeModel:
             'Optimizer': self.optimizer,
             'Activation Function': self.activation,
             'Loss Function': self.loss
-        })
+        }
+
+        if not self.classification:
+            settings['FFT Images'] = str(self.fft)
+
+        st.markdown("### Model Properties")
+        st.table(settings)
+
+    def check_settings(self):
+        if self.grayscale and self.pretrain:
+            raise ValueError("Grayscaling cannot be used with pretrained models")
 
     @st.cache_resource(ttl=config.furthr['file_ttl'], show_spinner="Running `CogniForgeModel.download(...)`.")
     @staticmethod
     def __cached_download(container: furthr.CollectionWrapper[furthr.ResearchItem]) -> tf.keras.Model:
-        data, _ = container.download_files()[0]
+        data = container.download_files()[0][0]
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".keras") as fh:
             fh.write(data.getvalue())
@@ -445,9 +487,9 @@ class CogniForgeModel:
             include_top=top,
             weights=weights,
             input_tensor=None,
-            input_shape=(self.width, self.height) if self.grayscale else (self.width, self.height, 3),
+            input_shape=(self.width, self.height, 1 if self.grayscale else 3),
             pooling=self.pool,
-            classes=2,
+            classes=2 if self.classification else 1,
             classifier_activation=self.activation
         )
 
@@ -488,33 +530,34 @@ class CogniForgeModel:
             verbose=2
         )
     
-    def upload(self, number: int) -> furthr.CollectionWrapper[furthr.ResearchItem]:
-        date_str = date.today().strftime('%Y-%m-%d')
-        long_name = f"Model {number}_{self.architecture}_{date_str}"
-        model_container = MODEL_GROUP.sub_collection(long_name, furthr.ResearchItem, "Code").create()
-        model_container.upload_content(self.model, f"{self.architecture}.keras")
-        model_container.model_architecture = self.architecture
-        model_container.image_width = self.width
-        model_container.image_height = self.height
-        model_container.image_grayscaling = self.grayscale
-        model_container.pretrained_weights = self.pretrain
-        model_container.optimizer = self.optimizer
-        model_container.activation_function = self.activation
-        model_container.loss_function = self.loss
-        return model_container
+    def upload(self) -> furthr.CollectionWrapper[furthr.ResearchItem]:
+        label = f"{self.architecture} @ {datetime.now():%d.%m.%y %H:%M:%S}"
+        self.container = MODEL_GROUP.sub_collection(label, furthr.ResearchItem, "Code").create()
+        self.container.upload_content(self.model, f"{self.architecture}.keras")
+        self.container.model_architecture = self.architecture
+        self.container.image_width = self.width
+        self.container.image_height = self.height
+        self.container.image_grayscaling = self.grayscale
+        self.container.pretrained_weights = self.pretrain
+        self.container.optimizer = self.optimizer
+        self.container.activation_function = self.activation
+        self.container.loss_function = self.loss
+
+        if not self.classification:
+            self.container.fft_images = self.fft
+
+        return self.container
     
     def evaluate(
         self,
-        number: int,
         X_test: np.ndarray,
         Y_test: np.ndarray,
         history: History
     ) -> furthr.CollectionWrapper[furthr.ResearchItem]:
         predictions = self.predict(X_test)
         # creating folder for the model
-        date_str = date.today().strftime('%Y-%m-%d')
-        long_name = f"Evaluation {number}_{self.architecture}_{date_str}"
-        eval_container = MODEL_GROUP.sub_collection(long_name, furthr.ResearchItem, "Analysis").create()
+        label = self.container.raw.name
+        eval_container = MODEL_GROUP.sub_collection(label, furthr.ResearchItem, "Analysis").create()
         # plot confusion matrix and saving .png
         disp = ConfusionMatrixDisplay.from_predictions(Y_test, predictions)
         eval_container.upload_content(disp.figure_, "cm_plot.png")

@@ -118,7 +118,7 @@ class CollectionWrapper(Generic[C]):
         if not isinstance(self.raw, (Experiment, Sample, ResearchItem)):
             raise TypeError("Operation supported on Experiment/Sample/ResearchItem, but self is " + self)
 
-    def download_files(self) -> list[tuple[BytesIO, str]] | None:
+    def download_files(self) -> list[tuple[BytesIO, str, str]] | None:
         self.__throw_if_files_unsupported()
         return download_item_bytes(self.raw, self.file_extension)
     
@@ -250,7 +250,7 @@ def __download_item(
     item: Experiment | Sample | ResearchItem | File | None,
     file_extension: str | None,
     download_fn: Callable[[str, dict], BytesIO | StringIO | requests.Response]
-) -> tuple[BytesIO, str] | tuple[StringIO, str] | None:
+) -> tuple[BytesIO, str, str] | tuple[StringIO, str, str] | None:
     if item is None:
         return None
     
@@ -263,7 +263,7 @@ def __download_item(
     if isinstance(item, File):
         b = download_fn(f"{config.furthr['host']}/files/{item.id}", dict(session.headers))
         if isinstance(b, (BytesIO, StringIO)):
-            return (b, item.name)
+            return (b, item.name, item.id)
         else:
             st.error(f"Failed to download file {item.name}: {b.reason}")
             return None
@@ -303,14 +303,14 @@ def __download_item(
 def download_item_string(
     item: Experiment | Sample | ResearchItem | File | None,
     file_extension: str | None = None
- ) -> tuple[StringIO, str] | None: 
+ ) -> tuple[StringIO, str, str] | None: 
     return __download_item(item, file_extension, http_cache.get_as_string)
 
 
 def download_item_bytes(
     item: Experiment | Sample | ResearchItem | File | None,
     file_extension: str | None = None
- ) -> tuple[BytesIO, str] | None: 
+ ) -> tuple[BytesIO, str, str] | None: 
     return __download_item(item, file_extension, http_cache.get_as_bytes)
 
 

@@ -13,7 +13,8 @@ pg = st.navigation({
     "Steel Surface": [
         st.Page("steel_quality/RustInference.py", title="Rust Detection - Inference", icon="🧱"),
         st.Page("steel_quality/RustTraining.py", title="Rust Detection - Training", icon="🧱"),
-        st.Page("steel_quality/Roughness.py", title="Roughness Estimation", icon="🗻")
+        st.Page("steel_quality/RoughnessInference.py", title="Roughness Estimation - Inference", icon="🗻"),
+        st.Page("steel_quality/RoughnessTraining.py", title="Roughness Estimation - Training", icon="🗻")
     ],
     "Layer Quality": [
         st.Page("layer_quality/Layer_Thickness.py", title="Layer Thickness", icon="💦")

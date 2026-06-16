@@ -14,15 +14,15 @@ You can *evaluate* an already trained model on a given image dataset
 and analyze the results here.""")
 
 
-def format_output(images_container, images_result, predictions):
+def format_output(ids, names, predictions):
     rust_image_count = np.count_nonzero(predictions)
     total_image_count = predictions.size
     rust_percent = rust_image_count * 100 / total_image_count
 
     df = pd.DataFrame({
-        "Filename": [o[1] for o in images_result],
+        "Filename": names,
         "Has rust": predictions,
-        "Link": ["/Photo?file_id=" + file.id for file in images_container.files]
+        "Link": ["/Photo?file_id=" + o for o in ids]
     })
     df = df.sort_values(by="Has rust", ascending=False)
     return rust_percent, df
@@ -51,7 +51,8 @@ with tab_model:
     if not images:
         st.markdown("Please select the data first. Then compatible models will be shown.")
     else:
-        st.markdown("Only rust detection models compatible with the resolution of the selected data get shown below.")
+        st.markdown("Only rust detection models compatible with " \
+        "the resolution of the selected data get shown below.")
         model = CogniForgeModel.open_dropdown(True, images)
 
         if model:
@@ -70,15 +71,16 @@ with tab_prediction:
 
     if st.button("Predict", disabled=is_prediction_blocked):
         model.download()
-        images_result, preprocessed_images = load_images(
+        ids, names, X, _ = load_images(
+            True,
             images,
             model.architecture,
             model.grayscale,
             model.pretrain,
             model.fft
         )
-        predictions = model.predict(preprocessed_images)
-        rust_percent, df = format_output(images.raw, images_result, predictions)
+        predictions = model.predict(X)
+        rust_percent, df = format_output(ids, names, predictions)
         collection = placeholder.create()
         collection.add_link_to(model.container)
         collection.add_link_to(images)
