@@ -11,7 +11,7 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
-from cogniforge.utils.furthr import FURTHRmind, download_item_bytes
+from utils.furthr import FURTHRmind, download_item_bytes
 
 sys.path.append("../cogniforge")
 from cogniforge.algorithms.anomaly_detection import (
@@ -21,11 +21,10 @@ from cogniforge.algorithms.anomaly_detection import (
     KMeansAnomalyDetector,
 )
 from cogniforge.utils.dataloader import DataLoader
-from cogniforge.utils.furthr import FURTHRmind
 from cogniforge.utils.object_select_box import selectbox
 from cogniforge.utils.plotting import plot_sampled, plot_xy_chart
 from cogniforge.utils.state_button import button
-import config
+from cogniforge.utils.config import FURTHR_MIND
 
 def save_univariate_time_series(df: pd.DataFrame, selected_column: str, output_path: str):
     if df.index.name is not None:
@@ -135,7 +134,7 @@ st.write(
     "Welcome to the Anomaly Detection tool. Here you can detect anomalies in your layer data using various algorithms."
 )
 st.write(
-    f"Upload your data to the [FURTHRmind]({config.furthr['host']}) database. Then, here, you can choose the correct dataset and let our algorithms tell you the quality of your layer."
+    f"Upload your data to the [FURTHRmind]({FURTHR_MIND.get('Host')}) database. Then, here, you can choose the correct dataset and let our algorithms tell you the quality of your layer."
 )
 
 if "latest_results" not in st.session_state:

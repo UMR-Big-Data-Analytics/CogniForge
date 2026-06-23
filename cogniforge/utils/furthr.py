@@ -5,7 +5,6 @@ from io import BytesIO, StringIO
 from tempfile import NamedTemporaryFile
 from typing import Any, Generic, TypeVar
 
-import config
 import pandas as pd
 import requests
 import streamlit as st
@@ -15,6 +14,7 @@ from furthrmind.collection import Experiment, FieldData, File, Group, ResearchIt
 from furthrmind.collection.baseclass import BaseClass
 from furthrmind.file_loader import FileLoader
 from matplotlib.figure import Figure
+from utils.config import FURTHR_MIND
 
 from . import http_cache
 from .object_select_box import selectbox
@@ -235,13 +235,13 @@ class CollectionPlaceholder(Generic[C]):
 def get_furthr_client():
     session = requests.Session()
     session.headers.update({
-        "X-API-KEY": config.furthr['api_key'],
+        "X-API-KEY": FURTHR_MIND.get('ApiKey'),
         "Content-Type": "application/json"
     })
     fm = API(
-        host=config.furthr['host'],
-        api_key=config.furthr['api_key'],
-        project_id=config.furthr['project_id']
+        host=FURTHR_MIND.get('Host'),
+        api_key=FURTHR_MIND.get('ApiKey'),
+        project_id=FURTHR_MIND.get('ProjectId')
     )
     return fm, session
 
@@ -261,7 +261,7 @@ def __download_item(
     _, session = get_furthr_client()
     
     if isinstance(item, File):
-        b = download_fn(f"{config.furthr['host']}/files/{item.id}", dict(session.headers))
+        b = download_fn(f"{FURTHR_MIND.get('Host')}/files/{item.id}", dict(session.headers))
         if isinstance(b, (BytesIO, StringIO)):
             return (b, item.name, item.id)
         else:
@@ -467,11 +467,11 @@ class FURTHRmind:
             container_type = "researchitem"
 
         container_description = {
-            "project": config.furthr['project_id'],
+            "project": FURTHR_MIND.get('ProjectId'),
             "type": container_type,
             "id": container.id,
         }
-        file_loader = FileLoader(config.furthr['host'], config.furthr['api_key'])
+        file_loader = FileLoader(FURTHR_MIND.get('Host'), FURTHR_MIND.get('ApiKey'))
 
         if isinstance(path_or_writer, str):
             file_loader.uploadFile(filePath=path_or_writer, parent=container_description)

@@ -1,10 +1,10 @@
-import streamlit as st
 import pandas as pd
+import streamlit as st
 import torch
 import torch.nn as nn
-import config
-from utils.furthr import FURTHRmind
+from utils.config import FURTHR_MIND
 from utils.dataloader import DataLoader
+from utils.furthr import FURTHRmind
 
 
 class PositionalEncoding(nn.Module):
@@ -78,7 +78,7 @@ def load_model_from_bytes(model_bytes):
 
 
 st.title("Layer Thickness Tool")
-st.write("Welcome! Upload your data from [FURTHRmind]({}) to analyze layer thickness.".format(config.furthr['host']))
+st.write("Welcome! Upload your data from [FURTHRmind]({}) to analyze layer thickness.".format(FURTHR_MIND.get('Host')))
 
 # Session state
 for key in ["fileName", "data", "files_loaded"]:

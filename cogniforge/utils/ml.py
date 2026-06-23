@@ -5,7 +5,6 @@ import tempfile
 from datetime import datetime
 from math import ceil
 
-import config
 import numpy as np
 import streamlit as st
 import tensorflow as tf
@@ -16,6 +15,7 @@ from sklearn.metrics import ConfusionMatrixDisplay
 from sklearn.utils import compute_class_weight
 from tensorflow.keras.callbacks import Callback, EarlyStopping, History, ReduceLROnPlateau  # type: ignore
 from utils import furthr, ui
+from utils.config import FURTHR_MIND, MACHINE_LEARNING
 
 AVAILABLE_LOSSES = [
     # Probabilistic
@@ -139,7 +139,7 @@ AVAILABLE_POOLING = [
     "avg",
     "max"
 ]
-MODEL_GROUP = furthr.CollectionWrapper(furthr.get_furthr_client()[0].Group.get(config.furthr['model_group_id']))
+MODEL_GROUP = furthr.CollectionWrapper(furthr.get_furthr_client()[0].Group.get(FURTHR_MIND.get('ModelGroupId')))
 
 
 # need to do spinner ourself, else inner progress bar gets hidden
@@ -166,7 +166,7 @@ def load_images(
         X = np.empty(X_shape, dtype=np.uint8)
 
         if not classification:
-            range = config.ml['roughness_range']
+            allowed = MACHINE_LEARNING.getrange('Roughness')
             Y = np.empty(len(images_raw), dtype=np.float32)
         elif images_container.data_label == "Rust":
             Y = np.ones(len(images_raw), dtype=np.uint8)
@@ -183,7 +183,7 @@ def load_images(
                     tags = json.loads(im.tag_v2[270])
                     Rz = tags['roughness']['Rz']
 
-                    if Rz < range.start or Rz > range.stop:
+                    if Rz < allowed.start or Rz > allowed.stop:
                         continue
                     
                     Y[len(ids)] = Rz
@@ -214,7 +214,7 @@ def load_images(
 
 class PredictionProgressBar(Callback):
     def __init__(self, X: np.ndarray):
-        self.batches = ceil(len(X) / config.ml['batch_size'])
+        self.batches = ceil(len(X) / MACHINE_LEARNING.getint('BatchSize'))
         self.bar = st.progress(0, "Running prediction ...")
 
     def on_predict_batch_end(self, batch, logs):
@@ -251,15 +251,15 @@ def apply_fft(image: np.ndarray) -> np.ndarray:
 
 class TrainingProgressBar(Callback):
     def __init__(self, X_train: np.ndarray, X_val: np.ndarray):
-        train_batches = ceil(len(X_train) / config.ml['batch_size'])
-        val_batches = ceil(len(X_val) / config.ml['batch_size'])
-        self.max_steps = config.ml['epochs'] * (train_batches + val_batches)
+        train_batches = ceil(len(X_train) / MACHINE_LEARNING.getint('BatchSize'))
+        val_batches = ceil(len(X_val) / MACHINE_LEARNING.getint('BatchSize'))
+        self.max_steps = MACHINE_LEARNING.getint('Epochs') * (train_batches + val_batches)
         self.current_step = 0
-        self.bar = st.progress(0, f"Epoch 1 / {config.ml['epochs']}")
+        self.bar = st.progress(0, f"Epoch 1 / {MACHINE_LEARNING.getint('Epochs')}")
 
     def __render(self):
         percent_complete = self.current_step / self.max_steps
-        self.bar.progress(percent_complete, f"Epoch {self.current_epoch} / {config.ml['epochs']}")
+        self.bar.progress(percent_complete, f"Epoch {self.current_epoch} / {MACHINE_LEARNING.getint('Epochs')}")
     
     def __increment(self):
         self.current_step += 1
@@ -368,7 +368,7 @@ class CogniForgeModel:
             kind=furthr.ResearchItem,
             category="Code",
             container_fielddata=expected,
-            force_group_id=config.furthr['model_group_id'],
+            force_group_id=FURTHR_MIND.get('ModelGroupId'),
             file_extension="keras"
         )
         return CogniForgeModel.from_container(container) if container else None
@@ -435,7 +435,7 @@ class CogniForgeModel:
         if self.grayscale and self.pretrain:
             raise ValueError("Grayscaling cannot be used with pretrained models")
 
-    @st.cache_resource(ttl=config.furthr['file_ttl'], show_spinner="Running `CogniForgeModel.download(...)`.")
+    @st.cache_resource(ttl=FURTHR_MIND.get('FileTTL'), show_spinner="Running `CogniForgeModel.download(...)`.")
     @staticmethod
     def __cached_download(container: furthr.CollectionWrapper[furthr.ResearchItem]) -> tf.keras.Model:
         data = container.download_files()[0][0]
@@ -455,7 +455,7 @@ class CogniForgeModel:
         progress = PredictionProgressBar(X)
         predictions = self.model.predict(
             X,
-            batch_size=config.ml['batch_size'],
+            batch_size=MACHINE_LEARNING.getint('BatchSize'),
             callbacks=[progress],
             verbose=2
         )
@@ -522,8 +522,8 @@ class CogniForgeModel:
         return self.model.fit(
             X_train,
             Y_train,
-            epochs=config.ml['epochs'],
-            batch_size=config.ml['batch_size'],
+            epochs=MACHINE_LEARNING.getint('Epochs'),
+            batch_size=MACHINE_LEARNING.getint('BatchSize'),
             validation_data=(X_val, Y_val),
             callbacks=[early_stopping, reduce_lr, progress],
             class_weight=class_weight_dict,
