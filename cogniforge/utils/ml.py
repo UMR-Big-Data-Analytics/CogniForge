@@ -434,6 +434,9 @@ class CogniForgeModel:
     def check_settings(self):
         if self.grayscale and self.pretrain:
             raise ValueError("Grayscaling cannot be used with pretrained models")
+        
+        if self.fft and not self.grayscale:
+            raise ValueError("FFT can only be ap plied when grayscaling")
 
     @st.cache_resource(ttl=FURTHR_MIND.get('FileTTL'), show_spinner="Running `CogniForgeModel.download(...)`.")
     @staticmethod
