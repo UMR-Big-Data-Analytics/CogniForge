@@ -3,7 +3,7 @@ import json
 import os
 import tempfile
 from datetime import datetime
-from math import ceil
+from math import ceil, sqrt
 
 import numpy as np
 import streamlit as st
@@ -11,7 +11,7 @@ import tensorflow as tf
 from matplotlib import pyplot as plt
 from PIL import Image
 from scipy.fftpack import fft2, fftshift
-from sklearn.metrics import ConfusionMatrixDisplay
+from sklearn.metrics import ConfusionMatrixDisplay, mean_absolute_error, mean_squared_error, r2_score
 from sklearn.utils import compute_class_weight
 from tensorflow.keras.callbacks import Callback, EarlyStopping, History, ReduceLROnPlateau  # type: ignore
 from utils import furthr, ui
@@ -441,6 +441,8 @@ class CogniForgeModel:
     @st.cache_resource(ttl=FURTHR_MIND.get('FileTTL'), show_spinner="Running `CogniForgeModel.download(...)`.")
     @staticmethod
     def __cached_download(container: furthr.CollectionWrapper[furthr.ResearchItem]) -> tf.keras.Model:
+        # prevent OOM
+        tf.keras.utils.clear_session()
         data = container.download_files()[0][0]
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".keras") as fh:
@@ -474,6 +476,8 @@ class CogniForgeModel:
         return predictions
     
     def build(self):
+        # prevent OOM
+        tf.keras.utils.clear_session()
         # getting the model name and loss function dynamically
         model_class = getattr(tf.keras.applications, self.architecture)
         loss_function = tf.keras.losses.get(self.loss)
@@ -546,7 +550,10 @@ class CogniForgeModel:
         self.container.activation_function = self.activation
         self.container.loss_function = self.loss
 
-        if not self.classification:
+        if self.classification:
+            self.container.model_purpose = "Rust Detection"
+        else:
+            self.container.model_purpose = "Roughness Estimation"
             self.container.fft_images = self.fft
 
         return self.container
@@ -557,10 +564,27 @@ class CogniForgeModel:
         Y_test: np.ndarray,
         history: History
     ) -> furthr.CollectionWrapper[furthr.ResearchItem]:
+        # predict classes/values
         predictions = self.predict(X_test)
         # creating folder for the model
         label = self.container.raw.name
         eval_container = MODEL_GROUP.sub_collection(label, furthr.ResearchItem, "Analysis").create()
+
+        if self.classification:
+            metrics = self.__evaluate_classification(eval_container, predictions, Y_test, history)
+        else:
+            metrics = self.__evaluate_regression(eval_container, predictions, Y_test)
+        
+        eval_container.upload_content(metrics, "metrics.json")
+        return eval_container
+    
+    def __evaluate_classification(
+        self,
+        eval_container: furthr.CollectionWrapper,
+        predictions: np.ndarray,
+        Y_test: np.ndarray,
+        history: History
+    ) -> dict[str, float]:
         # plot confusion matrix and saving .png
         disp = ConfusionMatrixDisplay.from_predictions(Y_test, predictions)
         eval_container.upload_content(disp.figure_, "cm_plot.png")
@@ -584,4 +608,65 @@ class CogniForgeModel:
         plt.legend(['train', 'val'], loc='upper right')
         eval_container.upload_content(plt.gcf(), "loss_plot.png")
         plt.close()
-        return eval_container
+        # calculate evaluation metrics
+        TN, FP, FN, TP = disp.confusion_matrix.ravel()
+        precision = TP / (TP + FP) if (TP + FP) != 0 else 0
+        recall = TP / (TP + FN) if (TP + FN) != 0 else 0
+        return {
+            'accuracy': (TP + TN) / (TP + TN + FP + FN),
+            'precision': precision,
+            'recall': recall,
+            'specificity': TN / (TN + FP) if (TN + FP) != 0 else 0,
+            'sensitivity': recall,
+            'f1_score': 2 * (precision * recall) / (precision + recall) if (precision + recall) != 0 else 0,
+            "confusion_matrix" : {
+                'TN': int(TN),
+                'FP': int(FP),
+                'FN': int(FN),
+                'TP': int(TP)
+            }
+        }
+    
+    def __evaluate_regression(
+        self,
+        eval_container: furthr.CollectionWrapper,
+        predictions: np.ndarray,
+        Y_test: np.ndarray
+    ) -> dict[str, float]:
+        # plot true vs predicted values and saving .png
+        plt.figure(figsize=(10, 6))
+        plt.scatter(Y_test, predictions, alpha=0.5)
+        plt.plot([min(Y_test), max(Y_test)], [min(Y_test), max(Y_test)], 'r--')
+        plt.xlabel("True Values")
+        plt.ylabel("Predictions")
+        plt.title("True vs Predicted Values")
+        eval_container.upload_content(plt.gcf(), "TrueVSPred_plot.png")
+        plt.close()
+        # Plot difference between predicted and actual values and saving .png
+        differences = predictions - Y_test
+        plt.figure(figsize=(10, 6))
+        plt.hist(differences, bins=50, alpha=0.7)
+        plt.xlabel("Difference (Predicted - Actual)")
+        plt.ylabel("Frequency")
+        plt.title("Histogram of Differences between Predicted and Actual Values")
+        eval_container.upload_content(plt.gcf(), "freq_plot.png")
+        plt.close()
+        # calculate evaluation metrics
+        mse = mean_squared_error(Y_test, predictions)
+        metrics = {
+            'mean_absolute_error': float(mean_absolute_error(Y_test, predictions)),
+            'mean_squared_error': float(mse),
+            'root_mean_squared_error': sqrt(mse),
+            'r_squared': float(r2_score(Y_test, predictions)),
+            'bias': float(np.mean(predictions - Y_test)),
+        }
+        lower = 25
+        breakpoints = [50, 75, 100, 125, float('inf')]
+
+        for upper in breakpoints:
+            mask = (Y_test >= lower) & (Y_test < upper)
+            key = f"mae[{lower}-{upper}]"
+            metrics[key] = float(mean_absolute_error(Y_test[mask], predictions[mask])) if np.sum(mask) > 0 else None
+            lower = upper
+
+        return metrics

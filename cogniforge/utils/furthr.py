@@ -1,4 +1,6 @@
+import functools
 import itertools
+import json
 import os
 from collections.abc import Callable
 from io import BytesIO, StringIO
@@ -99,20 +101,31 @@ class CollectionWrapper(Generic[C]):
         # https://docs.python.org/3/tutorial/datastructures.html#tuples-and-sequences
         return (self.id, )
     
+    @functools.singledispatchmethod
     @staticmethod
-    def __make_serializer(content) -> Callable[[str], None]:
-        if isinstance(content, pd.DataFrame):
-            def serializer(file_path: str):
-                content.to_csv(file_path, index=False)
-            return serializer
-        
-        if isinstance(content, tf.keras.Model):
-            return content.save
-        
-        if isinstance(content, Figure):
-            return content.savefig
-
+    def __serialize(content, path: str):
         raise TypeError("Expected a DataFrame/Model/Figure, got " + type(content).__name__)
+    
+    @__serialize.register
+    @staticmethod
+    def _(content: pd.DataFrame, path: str):
+        content.to_csv(path, index=False)
+    
+    @__serialize.register
+    @staticmethod
+    def _(content: tf.keras.Model, path: str):
+        content.save(path)
+
+    @__serialize.register
+    @staticmethod
+    def _(content: Figure, path: str):
+        content.savefig(path)
+
+    @__serialize.register
+    @staticmethod
+    def _(content: dict, path: str):
+        with open(path, 'w', encoding='utf-8') as fh:
+            json.dump(content, fh, indent=4, ensure_ascii=False)
     
     def __throw_if_files_unsupported(self):
         if not isinstance(self.raw, (Experiment, Sample, ResearchItem)):
@@ -128,10 +141,6 @@ class CollectionWrapper(Generic[C]):
     
     def upload_content(self, content: pd.DataFrame | tf.keras.Model | Figure, target_name: str):
         self.__throw_if_files_unsupported()
-
-        # Throw early on unexpected content type
-        serializer = CollectionWrapper.__make_serializer(content)
-
         target_extension = os.path.splitext(target_name)[1]
 
         if not target_extension:
@@ -141,7 +150,7 @@ class CollectionWrapper(Generic[C]):
         fh = NamedTemporaryFile(delete=False, suffix=target_extension)  # noqa: SIM115
 
         try:
-            serializer(fh.name)
+            CollectionWrapper.__serialize(content, fh.name)
             self.raw.add_file(fh.name, target_name)
         finally:
             fh.close()

@@ -1,6 +1,6 @@
 import streamlit as st
+import tensorflow as tf
 from sklearn.model_selection import train_test_split
-from tensorflow.errors import InvalidArgumentError  # type: ignore
 from utils import furthr, ui
 from utils.ml import CogniForgeModel, load_images
 
@@ -77,11 +77,15 @@ with tab_training:
                 model.build()
                 ui.log("Running training process. This can take a long time.")
                 history = model.train(X_train, Y_train, X_val, Y_val)
-            except (ValueError, InvalidArgumentError) as ex:
+            except (ValueError, tf.errors.InvalidArgumentError) as ex:
                 message = str(ex).replace("`", "'") # basic markdown escape
                 st.error(f"""Failed to train. Propably the model is not compatible with the selected data and settings.
 
-Original Message: `{message}`""")
+Original Message:
+
+```
+{message}
+```""")
                 continue
 
             model_container = model.upload()
