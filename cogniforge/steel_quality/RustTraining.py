@@ -1,9 +1,7 @@
-import numpy as np
 import streamlit as st
-import tensorflow as tf
-from sklearn.model_selection import train_test_split
+from steel_quality.TrainingTab import training_tab_content
 from utils import furthr, ui
-from utils.ml import CogniForgeModel, load_images
+from utils.ml import CogniForgeModel
 
 st.set_page_config(page_title="CogniForge | Rust Training", page_icon="🧱")
 
@@ -59,79 +57,4 @@ with tab_model:
 
 
 with tab_training:
-    st.markdown("## Run Training")
-    is_training_blocked = not (stainless and models)
-
-    if st.button(f"Train {len(models)} models" if models else "Train", disabled=is_training_blocked):
-        # for each setting building the corresponding model and evaluate the model
-        successes = 0
-
-        for model in models:
-            ui.log("Selecting the following training settings:")
-            model.render_settings()
-
-            try:
-                model.check_settings()
-            except ValueError as ex:
-                st.warning(str(ex) + ". Skipping...")
-                continue
-
-            ui.log("Preparing images and new model for training ...")
-            # preprocess the data for training and testing
-            _, _, rusty_preprocessed, rusty_labels = load_images(
-                True,
-                rusty,
-                model.architecture,
-                model.grayscale,
-                model.pretrain,
-                model.fft
-            )
-            _, _, stainless_preprocessed, stainless_labels = load_images(
-                True,
-                stainless,
-                model.architecture,
-                model.grayscale,
-                model.pretrain,
-                model.fft
-            )
-            X = np.append(rusty_preprocessed, stainless_preprocessed, axis=0)
-            Y = np.append(rusty_labels, stainless_labels, axis=0)
-            del rusty_preprocessed, rusty_labels
-            del stainless_preprocessed, stainless_labels
-            # Splitting the data into train,test and validation data, with random_state= 42 to ensure that every model
-            # will be trained with the same data for better comparison.
-            X_train, X_test_val, Y_train, Y_test_val = train_test_split(X, Y, test_size=0.3, random_state=42)
-            X_test, X_val, Y_test, Y_val = train_test_split(X_test_val, Y_test_val, test_size=0.5, random_state=42)
-            del X, X_test_val, Y, Y_test_val
-
-            try:
-                model.build()
-                ui.log("Running training process. This can take a long time.")
-                history = model.train(X_train, Y_train, X_val, Y_val)
-            except (ValueError, tf.errors.InvalidArgumentError) as ex:
-                message = str(ex).replace("`", "'") # basic markdown escape
-                st.error(f"""Failed to train. Propably the model is not compatible with the selected data and settings.
-
-Original Message:
-
-```
-{message}
-```""")
-                continue
-
-            model_container = model.upload()
-            model_container.add_link_to(rusty)
-            model_container.add_link_to(stainless)
-            ui.log("Finished training using previously selected settings.")
-            ui.log("Saving model evaluation metrics ...")
-            eval_container = model.evaluate(X_test, Y_test, history)
-            eval_container.add_link_to(model_container)
-            eval_container.add_link_to(rusty)
-            eval_container.add_link_to(stainless)
-            ui.log("Stored the model and corresponding metrics in the database.")
-            successes +=1
-
-        ui.log(f"Trained {successes} different models. Overall process complete.")
-    
-    if is_training_blocked:
-        st.markdown("Please select the data and configure model settings first.")
+    training_tab_content(models, [stainless])

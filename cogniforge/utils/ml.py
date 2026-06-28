@@ -13,20 +13,14 @@ from PIL import Image
 from scipy.fftpack import fft2, fftshift
 from sklearn.metrics import ConfusionMatrixDisplay, mean_absolute_error, mean_squared_error, r2_score
 from sklearn.utils import compute_class_weight
-from tensorflow.keras.callbacks import Callback, EarlyStopping, History, ReduceLROnPlateau  # type: ignore
+from tensorflow.keras.callbacks import Callback, EarlyStopping, History, ReduceLROnPlateau
 from utils import furthr, ui
 from utils.config import FURTHR_MIND, MACHINE_LEARNING
 
-AVAILABLE_LOSSES = [
-    # Probabilistic
-    "kl_divergence",
-    "poisson",
-    "binary_crossentropy",
-    "binary_focal_crossentropy",
-    "categorical_crossentropy",
-    "categorical_focal_crossentropy",
+AVAILABLE_CLASSIFICATION_LOSSES = [
     "sparse_categorical_crossentropy",
-    # Regression
+]
+AVAILABLE_REGRESSION_LOSSES = [
     "mean_squared_error",
     "mean_absolute_error",
     "mean_absolute_percentage_error",
@@ -34,17 +28,6 @@ AVAILABLE_LOSSES = [
     "cosine_similarity",
     "log_cosh",
     "huber",
-    # Hinge
-    "hinge",
-    "squared_hinge",
-    "categorical_hinge",
-    # Image segmentation
-    "dice",
-    "tversky",
-    # Similarity
-    "circle",
-    # Sequence
-    "ctc"
 ]
 AVAILABLE_OPTIMIZERS = [
     "Adam",
@@ -142,6 +125,30 @@ AVAILABLE_POOLING = [
 MODEL_GROUP = furthr.CollectionWrapper(furthr.get_furthr_client()[0].Group.get(FURTHR_MIND.get('ModelGroupId')))
 
 
+def apply_fft(image: np.ndarray) -> np.ndarray:
+    # Remove the channel dimension temporarily if it exists
+    if len(image.shape) == 3 and image.shape[-1] == 1:
+        image = image[:, :, 0]  # Remove the last dimension (channel)
+
+    # Perform 2D FFT and shift the zero frequency component to the center
+    fft_image = fft2(image)
+    fft_image_shifted = fftshift(fft_image)
+
+    # Calculate the magnitude spectrum and take the logarithm
+    magnitude_spectrum = np.log(np.abs(fft_image_shifted) + 1)
+
+    # Normalize to 0-255
+    magnitude_spectrum = (magnitude_spectrum - magnitude_spectrum.min()) / (
+        magnitude_spectrum.max() - magnitude_spectrum.min()
+    )
+    magnitude_spectrum = (magnitude_spectrum * 255).astype(np.uint8)
+
+    # Add back the single channel dimension to keep shape consistent
+    magnitude_spectrum = magnitude_spectrum[:, :, np.newaxis]
+
+    return magnitude_spectrum
+
+
 # need to do spinner ourself, else inner progress bar gets hidden
 @st.cache_data(show_spinner=False, max_entries=2)
 def load_images(
@@ -153,9 +160,6 @@ def load_images(
     fft: bool
 ) -> tuple[list[str], list[str], np.ndarray, np.ndarray]:
     with st.spinner("Running `load_images(...)`."):
-        #if fft:
-         #   grayscale = True
-
         images_raw = images_container.download_files()
         X_shape = (
             len(images_raw),
@@ -212,6 +216,29 @@ def load_images(
     return ids, names, X[:len(ids)], Y[:len(ids)]
 
 
+def load_multiple_datasets(
+    classification: bool,
+    datasets: list[furthr.CollectionWrapper[furthr.Sample]],
+    architecture: str,
+    grayscale: bool,
+    pretrain: bool,
+    fft: bool
+):
+    if len(datasets) == 1:
+        _, _, X, Y = load_images(classification, datasets[0], architecture, grayscale, pretrain, fft)
+        return X, Y
+    
+    X_list = []
+    Y_list = []
+
+    for dataset in datasets:
+        _, _, X, Y = load_images(classification, dataset, architecture, grayscale, pretrain, fft)
+        X_list.append(X)
+        Y_list.append(Y)
+
+    return np.concatenate(X_list), np.concatenate(Y_list)
+
+
 class PredictionProgressBar(Callback):
     def __init__(self, X: np.ndarray):
         self.batches = ceil(len(X) / MACHINE_LEARNING.getint('BatchSize'))
@@ -223,30 +250,6 @@ class PredictionProgressBar(Callback):
 
     def on_predict_end(self, logs):
         self.bar.empty()
-
-
-def apply_fft(image: np.ndarray) -> np.ndarray:
-    # Remove the channel dimension temporarily if it exists
-    if len(image.shape) == 3 and image.shape[-1] == 1:
-        image = image[:, :, 0]  # Remove the last dimension (channel)
-
-    # Perform 2D FFT and shift the zero frequency component to the center
-    fft_image = fft2(image)
-    fft_image_shifted = fftshift(fft_image)
-
-    # Calculate the magnitude spectrum and take the logarithm
-    magnitude_spectrum = np.log(np.abs(fft_image_shifted) + 1)
-
-    # Normalize to 0-255
-    magnitude_spectrum = (magnitude_spectrum - magnitude_spectrum.min()) / (
-        magnitude_spectrum.max() - magnitude_spectrum.min()
-    )
-    magnitude_spectrum = (magnitude_spectrum * 255).astype(np.uint8)
-
-    # Add back the single channel dimension to keep shape consistent
-    magnitude_spectrum = magnitude_spectrum[:, :, np.newaxis]
-
-    return magnitude_spectrum
 
 
 class TrainingProgressBar(Callback):
@@ -278,6 +281,41 @@ class TrainingProgressBar(Callback):
 
     def on_train_end(self, logs):
         self.bar.empty()
+
+
+class ModelGenerator:
+    def __init__(self, classification: bool, images: furthr.CollectionWrapper, settings: dict):
+        self.classification = classification
+        self.width = images.image_width
+        self.height = images.image_height
+        self.setting_values = settings.values()
+
+    def __iter__(self):
+        for o in itertools.product(*self.setting_values):
+            yield CogniForgeModel(
+                classification=self.classification,
+                architecture=o[0],
+                width=self.width,
+                height=self.height,
+                grayscale=o[1],
+                pretrain=o[2],
+                fft=False if self.classification else o[7],
+                optimizer=o[3],
+                activation=o[4],
+                loss=o[5],
+                pool=o[6]
+            )
+    
+    def __len__(self):
+        try:
+            return self.__count
+        except AttributeError:
+            self.__count = 1
+
+            for selected_options in self.setting_values:
+                self.__count *= len(selected_options)
+            
+            return self.__count
 
 
 class CogniForgeModel:
@@ -377,7 +415,7 @@ class CogniForgeModel:
     def open_form(
         classification: bool,
         images: furthr.CollectionWrapper[furthr.Sample] | None
-    ) -> list['CogniForgeModel'] | None:
+    ) -> ModelGenerator | None:
         st.markdown("## Choose Model Settings")
         inputs = {
             'Model Architecture': AVAILABLE_ARCHITECTURES,
@@ -385,7 +423,7 @@ class CogniForgeModel:
             'Pretrained Weights': [True, False],
             'Optimizer': AVAILABLE_OPTIMIZERS,
             'Activation Function': AVAILABLE_ACTIVATIONS,
-            'Loss Function': AVAILABLE_LOSSES,
+            'Loss Function': AVAILABLE_CLASSIFICATION_LOSSES if classification else AVAILABLE_REGRESSION_LOSSES,
             'Pooling Mode': AVAILABLE_POOLING
         }
 
@@ -394,25 +432,10 @@ class CogniForgeModel:
 
         settings = ui.form("settings", inputs)
 
-        if not settings or not images:
+        if settings and images:
+            return ModelGenerator(classification, images, settings)
+        else:
             return None
-        
-        return [
-            CogniForgeModel(
-                classification=classification,
-                architecture=o[0],
-                width=images.image_width,
-                height=images.image_height,
-                grayscale=o[1],
-                pretrain=o[2],
-                fft=False if classification else o[7],
-                optimizer=o[3],
-                activation=o[4],
-                loss=o[5],
-                pool=o[6]
-            )
-            for o in itertools.product(*settings.values())
-        ]
 
     def render_settings(self):
         settings = {
