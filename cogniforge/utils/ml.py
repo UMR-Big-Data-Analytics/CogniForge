@@ -609,7 +609,7 @@ class CogniForgeModel:
         history: History
     ) -> dict[str, float]:
         # plot confusion matrix and saving .png
-        disp = ConfusionMatrixDisplay.from_predictions(Y_test, predictions)
+        disp = ConfusionMatrixDisplay.from_predictions(Y_test, predictions, labels=[0, 1])
         eval_container.upload_content(disp.figure_, "cm_plot.png")
         # plot model accuracy and saving .png
         plt.figure()
